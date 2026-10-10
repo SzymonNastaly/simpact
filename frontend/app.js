@@ -426,6 +426,7 @@ window.SimpactMarkdown = (() => {
     const live = bilaterals?.live;
     $('bilateral-controls').hidden = !live;
     if (!live) return;
+    $('reset-round-two').disabled = controlPending || !live.open;
     const thinking = live.thinking_agents.length;
     const statuses = {idle:'Ready to begin',queued:'Waiting for the next step',paused:'Bilaterals paused',completed:'All agents have finished their conversation plans',error:live.error};
     $('bilateral-status').textContent = !live.open ? `Opens once every delegation has concluded Round 1 · ${live.concluded} of ${live.countries} concluded`
@@ -449,6 +450,37 @@ window.SimpactMarkdown = (() => {
       <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><div class="message-text md">${md(message.text)}</div>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
       ${ended ? `<p class="conversation-note">${esc(ended)}</p>` : ''}
       ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><div class="md">${md(report.summary)}</div>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${mdi(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${mdi(item)}</li>`).join('')}</ul>` : ''}${thinkingFor(report.event_id,report)}</article>`).join('')}</div>` : ''}`);
+  }
+
+  async function resetRound(round) {
+    if (controlPending) return;
+    const warning = round === 1
+      ? 'Reset Round 1 and its dependent Round 2? The current record will be archived.'
+      : 'Reset Round 2? Round 1 will stay intact and the current record will be archived.';
+    if (!window.confirm(warning)) return;
+    controlPending = true;
+    $('reset-round-one').disabled = $('reset-round-two').disabled = true;
+    renderRoundControl();
+    renderBilateralControls();
+    try {
+      let pending;
+      do {
+        const response = await fetch('/api/actions', {method:'POST', headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'}, body:JSON.stringify({operation:'reset',round})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Reset failed. Please try again.');
+        pending = result.pending;
+        if (pending) await new Promise(resolve => window.setTimeout(resolve,1000));
+      } while (pending);
+      closeAgent();
+      selectedMeeting = null;
+      await load();
+    } catch (error) { showError(error); }
+    finally {
+      controlPending = false;
+      $('reset-round-one').disabled = $('reset-round-two').disabled = false;
+      renderRoundControl();
+      renderBilateralControls();
+    }
   }
 
   async function controlBilaterals() {
@@ -521,6 +553,7 @@ window.SimpactMarkdown = (() => {
     const countries = session.countries.filter(country => country.live && !country.completed && country.live.phase !== 'completed');
     const active = countries.some(country => country.live.active);
     $('round-controls').hidden = session.mode !== 'live';
+    $('reset-round-one').disabled = controlPending;
     $('round-control').textContent = !countries.length ? 'Round 1 finished' : active ? 'Ⅱ Pause all countries' : '▶ Play all countries';
     $('round-control').disabled = controlPending || !countries.length;
     $('round-status').textContent = `${session.countries.length - countries.length} of ${session.countries.length} meetings concluded`;
@@ -576,6 +609,8 @@ window.SimpactMarkdown = (() => {
   $('back-to-countries').addEventListener('click',goBack);
   $('bilaterals-entry').addEventListener('click',openBilaterals);
   $('back-from-bilaterals').addEventListener('click',closeBilaterals);
+  $('reset-round-one').addEventListener('click', () => resetRound(1));
+  $('reset-round-two').addEventListener('click', () => resetRound(2));
   $('bilateral-control').addEventListener('click',controlBilaterals);
   $('close-agent').addEventListener('click',closeAgent);
   $('agent-dialog').addEventListener('close',() => { ++agentRequest; selectedAgent = null; $('agent-details').innerHTML = ''; });

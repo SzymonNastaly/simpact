@@ -14,7 +14,7 @@
   <main id="main">
     <section id="country-view" aria-labelledby="round-title">
       <div class="intro"><p class="eyebrow">THE FIRST CONVERSATION</p><h1 id="round-title">Round 1</h1><p class="lead">Every country starts with a conversation.<br>Choose a delegation to listen in.</p><p class="roster-total" id="roster-total" aria-live="polite">Loading delegations…</p></div>
-      <div id="round-controls" class="live-controls" hidden><button id="round-control" type="button">▶ Play all countries</button><span id="round-status" role="status"></span></div>
+      <div id="round-controls" class="live-controls" hidden><button id="round-control" type="button">▶ Play all countries</button><button id="reset-round-one" type="button" class="secondary-button">Reset Round 1</button><span id="round-status" role="status"></span></div>
       <div id="countries" class="country-grid" aria-label="Countries"></div>
       <section id="positions-chart" class="viz-panel" aria-label="Where the delegations stand" hidden></section>
       <button id="bilaterals-entry" class="bilaterals-entry" type="button" hidden><span><span class="eyebrow">ROUND 2 · BILATERALS</span><span class="entry-title">One-to-one conversations</span><span class="entry-status" id="bilaterals-entry-status"></span></span><span class="card-arrow" aria-hidden="true">↗</span></button>
@@ -22,7 +22,7 @@
     <section id="bilaterals-view" aria-labelledby="bilaterals-title" hidden>
       <button id="back-from-bilaterals" class="back-button" type="button"><span aria-hidden="true">←</span> All countries</button>
       <div class="country-heading"><p class="eyebrow">ROUND 2 · BILATERALS</p><h1 id="bilaterals-title" tabindex="-1">Bilaterals</h1><p class="lead">Agents rank who they want to meet, join available partners, and update their teams. Each agent meets up to five people and revises its plan after ten seconds waiting.</p></div>
-      <div id="bilateral-controls" class="live-controls" hidden><div><p id="bilateral-status" role="status"></p><small id="bilateral-detail"></small></div><button id="bilateral-control" type="button">Start bilaterals</button></div>
+      <div id="bilateral-controls" class="live-controls" hidden><div><p id="bilateral-status" role="status"></p><small id="bilateral-detail"></small></div><button id="bilateral-control" type="button">Start bilaterals</button><button id="reset-round-two" type="button" class="secondary-button">Reset Round 2</button></div>
       <section id="presence-board" class="presence" aria-label="Who is free and who is talking" hidden></section>
       <section id="bilateral-network" class="viz-panel" aria-label="Who talked to whom" hidden></section>
       <section id="bilateral-relations" class="viz-panel" aria-label="How the delegations relate" hidden></section>

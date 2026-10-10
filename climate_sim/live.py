@@ -11,6 +11,7 @@ agent calls never hold it. No calls on page load.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import threading
 from typing import Callable
@@ -166,6 +167,7 @@ class LiveLab(Lab):
         if config.bilateral_slots:
             self.sim.bilaterals = AgentAllocator(self.sim.hub, self.sim.store, round_number=2,
                 message_limit=config.bilateral_messages)
+        self._resetting = None
         self._closed = False
         if saved:
             self.events[:] = [Event.model_validate_json(line) for line in (resume / "events.jsonl").read_text().splitlines()]
@@ -388,10 +390,92 @@ class LiveLab(Lab):
         self._changed()
         return dict(control)
 
+    def _reset_round(self, round_number):
+        """Drain Concordia calls before discarding a phase and rebuilding its paused schedule."""
+        if round_number not in (1, 2):
+            raise ValueError("Choose Round 1 or Round 2")
+        if round_number == 2 and not self._bilaterals_open():
+            raise ValueError("Round 2 opens after every delegation has concluded Round 1")
+        if self._resetting is not None and self._resetting != round_number:
+            raise ValueError("Another round reset is already in progress")
+        self._resetting = round_number
+        self.bilateral.update(active=False)
+        if getattr(self, "bilateral_engine", None):
+            self.bilateral_engine.pause()
+        if round_number == 1:
+            for region, control in self.controls.items():
+                control["active"] = False
+                self.loops[region][0].pause()
+        if self.bilateral["thinking_agents"] or (round_number == 1 and any(
+                c["thinking_agent"] for c in self.controls.values())):
+            self._changed()
+            return {"pending": True}
+        # Preserve the original record, including private traces, with private file permissions.
+        if self.output:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            archive = self.output / f"before-reset-round-{round_number}-{stamp}"
+            archive.mkdir(mode=0o700)
+            for filename in ("events.jsonl", "state.json"):
+                target = archive / filename
+                target.touch(mode=0o600)
+                target.write_text((self.output / filename).read_text())
+        keys = list(self.loops) if round_number == 1 else ["bilaterals"]
+        for key in keys:
+            if key in self.loops:
+                self.loops.pop(key)[0].stop()
+        if getattr(self, "bilateral_engine", None):
+            self.bilateral_game_master.stopped = True
+            self.bilateral_engine.play()
+        self.events[:] = [e for e in self.events if e.round < round_number]
+        if self.sim.store.path:
+            temporary = self.sim.store.path.with_suffix(".jsonl.tmp")
+            temporary.touch(mode=0o600, exist_ok=True)
+            temporary.write_text("".join(e.model_dump_json() + "\n" for e in self.events))
+            temporary.replace(self.sim.store.path)
+        for member in self.sim.agents.values():
+            traces = [e.payload for e in self.events if e.kind == "agent_trace" and e.actor == member.name]
+            member.action_traces = json.loads(json.dumps(traces))
+            prepared = next((t for t in traces if t["stage"] == "prepare"), None)
+            initial = prepared["preference_after"] if prepared else None
+            preferred = traces[-1]["preference_after"] if traces else None
+            member.initial_preference = ClimateCommitment.model_validate(initial) if initial else None
+            member.preferred = ClimateCommitment.model_validate(preferred) if preferred else None
+            member.private_strategy = prepared["action"].get("private_strategy") or "" if prepared else ""
+            member.observed_event_ids = list(dict.fromkeys(e["id"] for t in traces for e in t["observations"]))
+            member._revised_rounds.clear()
+            member._context = {}
+            member.last_action = None
+            member.last_error = None
+        for observer in (self.sim.rapporteur, *self.sim.analysts):
+            observer.action_traces.clear()
+            observer._context = {}
+        self.sim.hub.meetings.clear()
+        self.sim.current_round = 1
+        self.bilateral = {"active": False, "status": "idle", "thinking_agents": [], "error": None}
+        if round_number == 1:
+            for region, control in self.controls.items():
+                control.update(active=False, status="idle", thinking_agent=None, stage=None,
+                    phase="discussion", messages=0, remaining=0, error=None,
+                    finish_requested=False, finish_resume=False)
+                discussion = RoundOneDiscussion(self.sim, region, control, lambda region=region: self._can_finish(region))
+                self.discussions[region] = discussion
+                self._start_loop(region, discussion, self.sim.teams[region], control, discussion.context)
+        if self.sim.bilaterals:
+            self.sim.bilaterals = AgentAllocator(self.sim.hub, self.sim.store, round_number=2,
+                message_limit=self.sim.config.bilateral_messages)
+            self._start_bilaterals()
+        self._resetting = None
+        self._changed()
+        return {"pending": False, "reset_round": round_number}
+
     def act(self, action):
         with self.condition:
             if self._closed:
                 raise ValueError("Live session is closed")
+            if action.get("operation") == "reset":
+                return self._reset_round(action.get("round"))
+            if self._resetting is not None:
+                raise ValueError("A round is resetting; wait for its current calls to finish")
             if action.get("track") == "bilaterals":
                 return self._act_bilaterals(action.get("operation"))
             region = action.get("country")
