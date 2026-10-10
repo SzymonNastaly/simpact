@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>simpact — Agent dynamics lab</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">s</span>simpact <span class="brand-divider">/</span><span class="brand-label">agent lab</span></a>
+    <div class="header-controls"><span class="run-label" id="run-label">Loading run…</span><label class="viewer-label">View as<select id="viewer" aria-label="Information access perspective"><option value="researcher">Researcher · full audit</option><option value="public">Public summit</option></select></label><button id="claim-role" class="button secondary" type="button" disabled>Play this role</button></div>
+  </header>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-heading"><span>DELEGATIONS</span><span id="roster-count">6 / 18</span></div>
+      <nav id="countries" aria-label="Delegations"></nav>
+      <section class="role-key"><h2>Member types</h2><div><span class="role-dot head"></span>Head negotiator</div><div><span class="role-dot economic"></span>Economic minister</div><div><span class="role-dot climate"></span>Climate adviser</div><p>One spokesperson. Multiple perspectives.</p></section>
+      <p class="source-credit">World Climate materials<br>Climate Interactive · MIT Sloan<br>UMass Lowell · CC BY 4.0</p>
+    </aside>
+    <main>
+      <div class="workspace-top"><div><div class="eyebrow" id="workspace-eyebrow">DELEGATION DYNAMICS</div><h1 id="workspace-title">China delegation</h1><p id="workspace-description">Inspect individual positions, private deliberations and the resulting mandate.</p></div><div class="round-switch" id="round-switch" aria-label="Negotiation round"></div></div>
+      <div class="mode-notice" id="mode-notice">Saved offline run · scripted agents, not Gemini. Private records are visible to the researcher only.</div>
+      <nav class="workspace-tabs" aria-label="Workspace"><button type="button" data-workspace="delegation" aria-pressed="true">Delegation room</button><button type="button" data-workspace="floor" aria-pressed="false">Negotiation floor <span>all members</span></button></nav>
+      <div id="error" class="error" role="alert" hidden></div>
+      <section id="delegation-workspace">
+        <div class="section-heading"><h2>Who is at the table?</h2><span id="team-summary">3 members · diverse priorities</span></div>
+        <div class="agent-cards" id="agent-cards"></div>
+        <div class="dynamics-layout">
+          <section class="panel discussion-panel"><div class="panel-heading"><div><h2>Internal deliberation</h2><span class="small muted" id="discussion-access">Delegation-private transcript</span></div><span class="visibility-tag">PRIVATE</span></div><div id="internal-transcript" class="transcript"></div></section>
+          <aside class="inspector">
+            <section class="panel"><div class="panel-heading"><h2>Member perspective</h2><span class="small muted" id="inspector-role"></span></div><div id="agent-perspective"></div></section>
+            <section class="panel"><div class="panel-heading"><h2>Opinion convergence</h2><span class="small muted">within this round</span></div><div id="alignment"></div></section>
+          </aside>
+        </div>
+        <section class="panel mandate-panel"><div class="panel-heading"><h2>How the team decided</h2><span class="small muted" id="mandate-rule"></span></div><div id="mandate"></div></section>
+      </section>
+      <section id="floor-workspace" hidden>
+        <div class="section-heading"><div><h2>Any member. Any delegation.</h2><p class="small muted">Invite an individual or a cross-country group. All invitees must acknowledge before a private room opens.</p></div><button type="button" class="button primary" id="open-request">Request a meeting</button></div>
+        <div class="floor-roster" id="floor-roster"></div>
+        <div class="protocol-bar"><div><span class="protocol-label">MEETING SANDBOX</span><span class="small muted">Manual controls · no automated agent replies</span></div><div class="clock-controls"><span id="clock" aria-live="polite">Tick 0</span><button type="button" class="button secondary" id="advance-tick">Advance 1 tick</button></div></div>
+        <div class="protocol-steps"><span>1 · REQUEST</span><span>2 · ACKNOWLEDGE (≤ 5 ticks)</span><span>3 · PRIVATE CONVERSATION</span><span>NO ACK → EXPIRE → NEW ACTION</span></div>
+        <div class="meeting-controls"><label class="viewer-label">Act as<select id="acting-member" aria-label="Member controlling manual meeting actions"></select></label><p class="small muted" id="acting-note">Researcher mode lets you test each participant’s actions manually.</p></div>
+        <div class="floor-layout"><section class="panel"><div class="panel-heading"><h2>Requests &amp; rooms</h2><span class="small muted" id="meeting-count">No meetings yet</span></div><div id="meeting-list"></div></section><section class="panel room-panel"><div class="panel-heading"><h2 id="room-title">Private room</h2><span id="room-status" class="small muted">Select a meeting</span></div><div id="room-members"></div><div id="room-messages"></div><form id="message-form"><label class="small" for="meeting-message">Message to meeting participants</label><textarea id="meeting-message" rows="3" placeholder="Only acknowledged participants can send messages." maxlength="4000" disabled></textarea><div class="form-actions"><span id="message-note" class="small muted">Select an active meeting.</span><button type="submit" class="button primary" id="send-message" disabled>Send message</button></div></form></section></div>
+        <details class="public-record"><summary>Public summit record from the saved run</summary><div id="public-transcript"></div></details>
+      </section>
+      <footer class="workspace-footer"><span id="replay-note">Replay and protocol sandbox are separate. Meetings do not modify the saved run.</span><details><summary>Climate evaluation (secondary)</summary><p id="climate-summary"></p></details></footer>
+    </main>
+  </div>
+  <dialog id="meeting-dialog">
+    <form id="request-form"><div class="dialog-heading"><div><div class="eyebrow">PARTICIPANT-TO-PARTICIPANT</div><h2>Request a private meeting</h2></div><button type="button" class="icon-button" id="close-dialog" aria-label="Close meeting request">×</button></div><label for="request-sender">From</label><select id="request-sender"></select><label for="request-topic">Topic</label><input id="request-topic" maxlength="300" placeholder="e.g. Finance coalition and joint reduction proposal" required><fieldset><legend>Invite members (individual or group)</legend><div id="invitees" class="invitee-list"></div></fieldset><p class="small muted">Every invitee must acknowledge before tick 5 after this request. Otherwise the request expires and a different action is needed.</p><div class="form-actions"><span id="invitation-count" class="small muted">No invitees selected</span><button type="submit" class="button primary">Send request</button></div></form>
+  </dialog>
+</body>
+</html>

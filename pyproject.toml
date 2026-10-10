@@ -6,4 +6,13 @@ dependencies = [
     "autogen-core==0.7.5",
     "autogen-ext[openai]==0.7.5",
     "google-genai>=2.29",
+    "gdm-concordia==2.4.0",
+    "pydantic>=2.10,<3",
+    "pypdf>=6,<7",
 ]
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
