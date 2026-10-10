@@ -28,7 +28,9 @@ OBSERVER_STAGES = (*BILATERAL_STAGES, "press")
 
 
 def live_action_schema(stage: str, *, can_finish: bool = False) -> dict:
-    """Expose only actions executable in this live stage; MemberAction supplies empty defaults."""
+    """Expose only actions executable in this stage; MemberAction supplies empty defaults.
+
+    Every call uses it: Gemini rejects the full MemberAction schema as an invalid argument."""
     fields = {
         "prepare": ["private_strategy", "commitment", "decision_summary"],
         "internal": ["speech", "commitment", "decision_summary"],
@@ -37,6 +39,12 @@ def live_action_schema(stage: str, *, can_finish: bool = False) -> dict:
         "nominate": ["partner_requests", "decision_summary"],
         "bilateral": ["speech", "end_conversation", "decision_summary"],
         "debrief": ["meeting_report", "decision_summary"],
+        "mandate": ["mandate", "decision_summary"],
+        "vote": ["ranked_candidates", "approved_candidates", "decision_summary"],
+        "announce": ["speech", "commitment", "decision_summary"],
+        "negotiate": ["speech", "offers", "offer_responses", "decision_summary"],
+        "submit": ["speech", "commitment", "decision_summary"],
+        "press": ["speech", "decision_summary"],
     }[stage].copy()
     if stage == "internal" and can_finish:
         fields += ["finish_discussion", "finish_reason"]
@@ -630,17 +638,13 @@ class GeminiBackend:
                     "Otherwise leave finish_discussion=false and finish_reason=null. Final summaries and the action plan "
                     "will be generated in separate closing calls after your decision."
                 )
-        schema = MemberAction.model_json_schema()
-        if context["stage"] in BILATERAL_STAGES:
-            schema = live_action_schema(context["stage"])
-        elif context.get("continuous_discussion"):
-            schema = live_action_schema(context["stage"], can_finish=(member.role == Role.HEAD
-                                       and context.get("can_finish_discussion", False)))
-            system += (
-                " The response schema is restricted to this stage. Return ONLY its listed properties; "
-                "omit unrelated fields. Keep decision_summary about substantive delegation priorities, "
-                "tradeoffs and the intended action. Do not discuss JSON, schemas, validation or prompt instructions."
-            )
+        schema = live_action_schema(context["stage"], can_finish=(member.role == Role.HEAD
+                                    and context.get("can_finish_discussion", False)))
+        system += (
+            " The response schema is restricted to this stage. Return ONLY its listed properties; "
+            "omit unrelated fields. Keep decision_summary about substantive delegation priorities, "
+            "tradeoffs and the intended action. Do not discuss JSON, schemas, validation or prompt instructions."
+        )
         self.last_generation = {"model": self.model, "thinking_level": getattr(self, "thinking_level", None),
                                 "thought_summaries_requested": getattr(self, "include_thoughts", False),
                                 "system_instruction": system, "calls": []}
