@@ -61,9 +61,10 @@ window.SimpactViz = (() => {
       {key: 'annual_reduction_rate_percent', title: 'Annual emissions cut proposed', unit: '% per year', format: v => `${fmt(v)}%`},
       {key: 'climate_fund_billion_per_year', title: 'Climate finance proposed', unit: 'USD billion per year', format: money, diverging: true},
     ];
-    const width = Math.max(320, el.clientWidth || 900), side = width >= 760;
-    const rowHeight = 34, top = 30, bottom = 34;
-    const panelWidth = side ? (width - 170 - 40) / 2 : width - 150;
+    const width = Math.max(320, (el.clientWidth || 900) - 52), side = width >= 1040;
+    const labelWidth = 190;
+    const panelWidth = side ? (width - 28) / 2 - labelWidth : Math.max(320, width - labelWidth);
+    const rowHeight = Math.max(44, ...rows.map(row => row.points.length * 14 + 12)), top = 42, bottom = 38;
     const height = top + rows.length * rowHeight + bottom;
     const charts = panels.map(panel => {
       const values = rows.flatMap(row => row.points.map(p => p.commitment[panel.key]));
@@ -72,21 +73,22 @@ window.SimpactViz = (() => {
       const ticks = niceTicks(lo, hi === lo ? lo + 1 : hi, side ? 4 : 5);
       const x = scale(ticks[0], ticks[ticks.length - 1], 8, panelWidth - 12);
       let body = ticks.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${top - 6}" y2="${height - bottom + 4}" class="${t === 0 && panel.diverging ? 'viz-zero' : 'viz-grid'}"/><text x="${x(t)}" y="${height - bottom + 20}" class="viz-tick" text-anchor="middle">${esc(panel.format(t))}</text>`).join('');
-      if (panel.diverging) body += `<text x="${x(0) - 6}" y="${top - 12}" class="viz-tick" text-anchor="end">← requests</text><text x="${x(0) + 6}" y="${top - 12}" class="viz-tick">contributes →</text>`;
+      if (panel.diverging) body += `<text x="8" y="${top - 16}" class="viz-tick">− requests</text><text x="${panelWidth - 12}" y="${top - 16}" class="viz-tick" text-anchor="end">+ contributes</text>`;
       rows.forEach((row, i) => {
         const y = top + i * rowHeight + rowHeight / 2;
         const xs = row.points.map(p => x(p.commitment[panel.key]));
         if (xs.length > 1) body += `<line x1="${Math.min(...xs)}" x2="${Math.max(...xs)}" y1="${y}" y2="${y}" class="viz-range"/>`;
-        row.points.forEach(p => { body += dot(x(p.commitment[panel.key]), y, roleKey(p.member.role),
+        if (!row.points.length) body += `<text x="8" y="${y+4}" class="viz-tick">No proposal yet</text>`;
+        row.points.forEach((p,index) => { const offset = row.points.length > 1 ? (index - (row.points.length-1)/2)*14 : 0; body += dot(x(p.commitment[panel.key]), y + offset, roleKey(p.member.role),
           `<strong>${esc(row.country.name)} · ${esc(names.roleName(p.member))}</strong><br>${esc(panel.format(p.commitment[panel.key]))} ${esc(panel.unit)}<br><span>From ${esc(p.source)}</span>`); });
       });
       return {panel, body};
     });
     const rowLabels = rows.map((row, i) => `<text x="0" y="${top + i * rowHeight + rowHeight / 2 + 4}" class="viz-label">${esc(row.country.name)}</text>`).join('');
-    const block = (chart, labels) => `<figure class="viz-figure" style="flex:${(labels ? 150 : 0) + panelWidth} 1 0;min-width:0"><figcaption><strong>${esc(chart.panel.title)}</strong><span>${esc(chart.panel.unit)}</span></figcaption>${svg((labels ? 150 : 0) + panelWidth, height, chart.panel.title)}${labels ? rowLabels : ''}<g transform="translate(${labels ? 150 : 0},0)">${chart.body}</g></svg></figure>`;
+    const block = chart => `<figure class="viz-figure" style="flex:1;min-width:0"><figcaption><strong>${esc(chart.panel.title)}</strong><span>${esc(chart.panel.unit)}</span></figcaption><div class="positions-scroll" tabindex="0" aria-label="${esc(chart.panel.title)} chart">${svg(labelWidth + panelWidth, height, chart.panel.title)}${rowLabels}<g transform="translate(${labelWidth},0)">${chart.body}</g></svg></div></figure>`;
     const table = `<details class="viz-table"><summary>Data table</summary><table><thead><tr><th>Delegation</th><th>Member</th><th>Cut % per year</th><th>Finance $B per year</th><th>From</th></tr></thead><tbody>${rows.flatMap(row => row.points.map(p => `<tr><td>${esc(row.country.name)}</td><td>${esc(names.roleName(p.member))}</td><td>${fmt(p.commitment.annual_reduction_rate_percent, 2)}</td><td>${fmt(p.commitment.climate_fund_billion_per_year, 1)}</td><td>${esc(p.source)}</td></tr>`)).join('')}</tbody></table></details>`;
-    el.innerHTML = `<div class="viz-heading"><h2>Where the delegations stand</h2><p>Each dot is one agent’s latest proposal; the grey bar spans the disagreement inside a team.</p></div>${legendRoles()}
-      <div class="viz-row${side ? ' side' : ''}">${charts.map((chart, i) => block(chart, !side || i === 0)).join('')}</div>${table}`;
+    el.innerHTML = `<div class="viz-heading"><h2>Where the delegations stand</h2><p>Each dot is an agent’s latest Round 1 proposal, not a final national commitment. Dots are separated vertically so matching proposals remain visible; grey bars show the range within each team.</p></div>${legendRoles()}
+      <div class="viz-row${side ? ' side' : ''}">${charts.map(block).join('')}</div>${table}`;
   }
 
   // Country view: how each member's proposal moved through the conversation.

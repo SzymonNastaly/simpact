@@ -269,3 +269,8 @@ summary{font-size:12px;color:var(--green);cursor:pointer;line-height:1.5}
 @media(max-width:560px){.casting-credits ul{columns:1}.country-heading{background-image:linear-gradient(90deg,rgba(248,247,243,.94),rgba(248,247,243,.86)),var(--country-flag,none)}}
 
 dialog{overscroll-behavior:contain}
+
+.positions-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:8px}
+.positions-scroll .viz-svg{min-width:510px;overflow:hidden}
+.viz-figure figcaption{flex-wrap:wrap}
+.viz-table{max-width:100%;overflow-x:auto}

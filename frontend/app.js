@@ -53,7 +53,14 @@ window.SimpactCasting = (() => {
     const signature = JSON.stringify([data, $(id).clientWidth]);
     if (chartSignatures[id] === signature) return;
     chartSignatures[id] = signature;
-    draw($(id));
+    const element = $(id);
+    const expanded = [...element.querySelectorAll('details')].map(detail => detail.open);
+    const horizontal = [...element.querySelectorAll('.positions-scroll,.viz-table')].map(item => item.scrollLeft);
+    const top = window.scrollY, left = window.scrollX;
+    draw(element);
+    [...element.querySelectorAll('details')].forEach((detail,index) => { if (expanded[index]) detail.open = true; });
+    [...element.querySelectorAll('.positions-scroll,.viz-table')].forEach((item,index) => { item.scrollLeft = horizontal[index] || 0; });
+    if (window.scrollY !== top || window.scrollX !== left) window.scrollTo({top,left,behavior:'instant'});
   }
 
   const roleName = agent => {
