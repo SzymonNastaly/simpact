@@ -7,7 +7,7 @@ const {execFileSync} = require('node:child_process');
 const rootPath = path.resolve(__dirname, '..');
 const fixture = JSON.parse(execFileSync(path.join(rootPath,'.venv/bin/python'), ['-c',
   'import json,tempfile; from pathlib import Path; from climate_sim.models import SimulationConfig; from climate_sim.simulation import Simulation; from climate_sim.lab import Lab; tasktemp=tempfile.TemporaryDirectory(); p=Path(tasktemp.name)/"run"; Simulation(SimulationConfig(seed=42),output=p).run(); lab=Lab(p); print(json.dumps({"researcher":lab.replay("researcher"),"public":lab.replay("public"),"china.climate_adviser":lab.replay("china.climate_adviser")})); tasktemp.cleanup()'
-], {cwd:rootPath,encoding:'utf8'}));
+], {cwd:rootPath,encoding:'utf8',maxBuffer:16 * 1024 * 1024}));
 const html = fs.readFileSync(path.join(rootPath,'frontend/index.html'),'utf8');
 const script = fs.readFileSync(path.join(rootPath,'frontend/app.js'),'utf8');
 const elements = new Map();

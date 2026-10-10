@@ -10,6 +10,7 @@ from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
 from .briefs import load_briefs, DEFAULT_BRIEFS
 from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
 from .memory import EventStore, write_json
+from .meetings import MeetingHub, Participant
 from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
 from .scenes import run_scene
 from .voting import ranked_choice
@@ -59,6 +60,9 @@ class Simulation:
         if set(config.agent_models) - set(self.agents):
             raise ValueError("Per-agent model map contains unknown member IDs")
         self.heads = [members[0] for members in self.teams.values()]
+        self.meeting_hub = MeetingHub([Participant(id=m.name, delegation=m.brief.delegation.value,
+            role=m.role.value, model=m.backend.label) for m in self.agents.values()], store=self.store)
+        self.floor_step = 0
         self.store.append("configuration", {"config": config.model_dump(mode="json"),
                           "agent_models": self._model_registry,
                           "sources": {k: {"file": b.source_file, "sha256": b.source_sha256, "license": b.license, "attribution": b.attribution} for k, b in self.briefs.items()}},
@@ -66,7 +70,7 @@ class Simulation:
 
     def context(self, member: DelegationMember) -> dict:
         region = member.brief.delegation.value
-        events = self.store.view(member.name, region, self.config.memory_length)
+        events = self.store.view(member.name, region, self.config.memory_length, exclude_kinds={"agent_trace"})
         # Keep full trajectories in the audit log; observations use bounded summaries.
         for event in events:
             if event["kind"] == "climate_outcome":
@@ -92,6 +96,9 @@ class Simulation:
             result["mandate"] = self.mandates[region].model_dump(mode="json")
         if region in self._candidates:
             result["candidates"] = {k: c.model_dump(mode="json") for k, c in self._candidates[region].items()}
+        result["member_meetings"] = self.meeting_hub.view(member.name)
+        if self.stage == "member_floor":
+            result["floor_step"] = self.floor_step
         return result
 
     def _scene(self, stage: str, participants: list[DelegationMember], *, simultaneous=False,
@@ -103,8 +110,22 @@ class Simulation:
         self.store.append("scene_started", {"stage": stage, "participants": [m.name for m in participants],
                           "engine": "concordia.simultaneous" if simultaneous else "concordia.sequential", "turns": turns},
                           round=self.current_round, visibility=visibility, owners=owners)
+        def resolve_with_trace(actions):
+            self._validate_actions(stage, actions)
+            traces = {}
+            for name in sorted(actions):
+                traces[name] = self.agents[name].action_traces[-1]
+            start = len(self.store.events)
+            resolve(actions)
+            resolved = self.store.events[start:]
+            for name, trace in traces.items():
+                trace["resolution_event_ids"] = [e.id for e in resolved
+                    if e.visible_to(name, self.agents[name].brief.delegation.value)
+                    and (e.actor in (name, None) or e.kind == "commitments")]
+                self.store.append("agent_trace", trace, round=self.current_round,
+                                  visibility="individual", owners=[name], actor=name)
         run_scene(stage, participants, simultaneous=simultaneous, turns=turns,
-                  context=self.context, resolve=lambda actions: (self._validate_actions(stage, actions), resolve(actions)))
+                  context=self.context, resolve=resolve_with_trace)
 
     def _validate_actions(self, stage: str, actions: dict[str, MemberAction]):
         for name, action in actions.items():
@@ -231,6 +252,39 @@ class Simulation:
         self.outcomes[self.current_round] = outcome
         self.store.append("climate_outcome", outcome.model_dump(mode="json"), round=self.current_round, visibility="public")
 
+    def _member_floor(self):
+        if not self.config.member_meetings:
+            return
+        self.meeting_hub.round_number = self.current_round
+        for step in range(self.config.member_floor_ticks):
+            self.floor_step = step
+            def resolve(actions):
+                # Apply conversations before closures so a simultaneous close cannot
+                # retroactively invalidate another member's same-tick message.
+                for operation in ("request", "respond", "message", "report", "close"):
+                    for name, action in sorted(actions.items()):
+                        tasks = {
+                            "request": [(r.invitees, r.topic) for r in action.meeting_requests],
+                            "respond": [(key, value == "accept") for key, value in action.meeting_acknowledgements.items()],
+                            "message": [(m.meeting_id, m.text) for m in action.meeting_messages],
+                            "report": list(action.meeting_reports),
+                            "close": [(key,) for key in action.close_meetings],
+                        }[operation]
+                        for task in tasks:
+                            try:
+                                if operation == "report":
+                                    self.meeting_hub.report(name, task.meeting_id, task.summary,
+                                        agreements=task.agreements, next_steps=task.next_steps, notify_team=task.notify_team)
+                                else:
+                                    getattr(self.meeting_hub, operation)(name, *task)
+                            except (ValueError, PermissionError):
+                                # Auditable rejected transitions, never fabricate an ACK.
+                                self.store.append("meeting_action_rejected", {"operation": operation,
+                                    "tick": self.meeting_hub.tick, "reason": "Unauthorized or no longer valid protocol transition"},
+                                    round=self.current_round, visibility="individual", owners=[name], actor=name)
+            self._scene("member_floor", list(self.agents.values()), simultaneous=True, resolve=resolve)
+            self.meeting_hub.advance()
+
     def _settle_offers(self):
         final = self.commitments[self.current_round]
         for offer in self.offers.values():
@@ -256,6 +310,7 @@ class Simulation:
             for round_number in range(2, self.config.rounds + 1):
                 # International offers inform the next private team deliberation.
                 self._negotiate()
+                self._member_floor()
                 self.current_round = round_number
                 for offer in self.offers.values():
                     if offer.expires_after_round < round_number and offer.status in ("proposed", "accepted"):
@@ -265,6 +320,7 @@ class Simulation:
                     self._internal(region)
                     self._mandate(region)
                 self._negotiate()
+                self._member_floor()
                 self._submit("submit")
                 if self.config.stop_on_target and self.outcomes[round_number].target_2c_achieved:
                     break
@@ -278,6 +334,8 @@ class Simulation:
                      "commitments_by_round": {str(r): {k: c.model_dump(mode="json") for k, c in cs.items()} for r, cs in self.commitments.items()},
                      "outcomes_by_round": {str(r): out.model_dump(mode="json") for r, out in self.outcomes.items()},
                      "offers": [{**o.model_dump(mode="json"), "accepted_by": sorted(self.accepted_by[o.id]), "rejected_by": sorted(self.rejected_by[o.id])} for o in self.offers.values()],
+                     "meetings": self.meeting_hub.view(researcher=True)["meetings"],
+                     "meeting_tick": self.meeting_hub.tick,
                      "metrics": metrics}
             if self.output:
                 write_json(self.output / "state.json", state)

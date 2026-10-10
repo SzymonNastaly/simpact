@@ -149,13 +149,17 @@ def test_human_controller_uses_same_protocol_and_cannot_impersonate(tmp_path):
     actor = "india.climate_adviser"
     lab.act({"operation": "claim", "actor": actor})
     assert lab.human_role == actor and lab.hub.participants[actor].controller == "human"
+    existing_meetings = set(lab.hub.meetings)
     lab.act({"operation": "request", "actor": actor, "invitees": ["eu.economic_minister"], "topic": "Human invitation"})
+    new_meetings = set(lab.hub.meetings) - existing_meetings
+    assert len(new_meetings) == 1
+    meeting_id = new_meetings.pop()
     with pytest.raises(PermissionError):
-        lab.act({"operation": "respond", "actor": "eu.economic_minister", "meeting_id": "meeting-0001", "accepted": True})
+        lab.act({"operation": "respond", "actor": "eu.economic_minister", "meeting_id": meeting_id, "accepted": True})
     lab.act({"operation": "release"})
     assert lab.human_role is None and lab.hub.participants[actor].controller == "agent"
-    lab.act({"operation": "respond", "actor": "eu.economic_minister", "meeting_id": "meeting-0001", "accepted": True})
-    assert lab.hub.meetings["meeting-0001"].status == "active"
+    lab.act({"operation": "respond", "actor": "eu.economic_minister", "meeting_id": meeting_id, "accepted": True})
+    assert lab.hub.meetings[meeting_id].status == "active"
 
 
 def test_meeting_events_persist_with_exact_participant_scope(tmp_path):

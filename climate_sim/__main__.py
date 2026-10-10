@@ -28,6 +28,8 @@ def main() -> int:
     parser.add_argument("--agent-models", type=Path, help="JSON object mapping exact member IDs to Gemini model names")
     parser.add_argument("--us-variant", choices=["national", "climate_alliance_proxy"], default="national")
     parser.add_argument("--stop-on-target", action="store_true")
+    parser.add_argument("--no-member-meetings", action="store_true", help="Disable autonomous member-level meeting scenes")
+    parser.add_argument("--member-floor-ticks", type=int, default=5)
     parser.add_argument("--briefs", type=Path, default=DEFAULT_BRIEFS)
     parser.add_argument("--output", type=Path, help="New output directory (existing paths are refused)")
     parser.add_argument("--reviewed-outcomes", type=Path, help="Use exact-input manually reviewed C-ROADS results instead of the mock")
@@ -39,7 +41,8 @@ def main() -> int:
             offer_visibility=args.offer_visibility, memory_length=args.memory_length,
             backend=args.backend, default_model=args.model,
             agent_models=json.loads(args.agent_models.read_text()) if args.agent_models else {},
-            us_variant=args.us_variant, stop_on_target=args.stop_on_target)
+            us_variant=args.us_variant, stop_on_target=args.stop_on_target,
+            member_meetings=not args.no_member_meetings, member_floor_ticks=args.member_floor_ticks)
         output = args.output or Path("runs") / (datetime.now(timezone.utc).strftime("climate-%Y%m%dT%H%M%S-%fZ") + f"-seed{args.seed}")
         evaluator = ReviewedOutcomeEvaluator(args.reviewed_outcomes) if args.reviewed_outcomes else None
         sim = Simulation(config, output=output, briefs_directory=args.briefs, evaluator=evaluator)

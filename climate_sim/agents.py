@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from concordia.typing import entity
 from pydantic import ValidationError
 
-from .models import Brief, ClimateCommitment, COMMITMENT_FIELDS, DelegationId, MemberAction, Role, SimulationConfig, TeamMandate, NegotiationOffer
+from .models import Brief, ClimateCommitment, COMMITMENT_FIELDS, DelegationId, DecisionSummary, MemberAction, MeetingInvitation, MeetingMessage, MeetingReport, Role, SimulationConfig, TeamMandate, NegotiationOffer
 
 
 ROLE_PRIORITIES = {
@@ -64,6 +64,7 @@ class DelegationMember(entity.Entity):
         self.last_action: MemberAction | None = None
         self._context: dict[str, Any] = {}
         self._revised_rounds: set[int] = set()
+        self.action_traces: list[dict] = []
 
     @property
     def name(self) -> str:
@@ -82,6 +83,7 @@ class DelegationMember(entity.Entity):
         self._context = context
 
     def act(self, action_spec: entity.ActionSpec = entity.DEFAULT_ACTION_SPEC) -> str:
+        before = self.preferred.model_dump(mode="json") if self.preferred else None
         try:
             action = self.backend.decide(self, self._context)
         except Exception as error:
@@ -94,11 +96,32 @@ class DelegationMember(entity.Entity):
             self.private_strategy = action.private_strategy or ""
         elif self._context["stage"] == "internal":
             self.preferred = action.commitment
+        self.action_traces.append({
+            "id": f"trace-{self.name}-{len(self.action_traces)+1:04d}",
+            "agent": self.name, "round": self._context["round"], "stage": self._context["stage"],
+            "backend": self.backend.label,
+            "summary_source": "instrumented_scripted_policy" if self.backend.label == "offline-scripted-v1" else
+                              ("agent_reported" if action.decision_summary else "not_recorded"),
+            "decision_summary": action.decision_summary.model_dump(mode="json") if action.decision_summary else None,
+            "observations": json.loads(json.dumps(self._context.get("events", []))),
+            "inputs": json.loads(json.dumps({k: v for k, v in self._context.items() if k not in ("events", "decision_history")})),
+            "preference_before": before,
+            "preference_after": self.preferred.model_dump(mode="json") if self.preferred else None,
+            "action": action.model_dump(mode="json", exclude={"decision_summary"}),
+        })
         # Explicit prefix avoids Concordia's version-specific name-in-string heuristic.
         return f"{self.name}: {action.model_dump_json()}"
 
     def validate_action(self, action: MemberAction, context: dict) -> None:
         stage = context["stage"]
+        if action.decision_summary:
+            allowed = {e["id"] for e in context.get("events", [])}
+            if set(action.decision_summary.evidence_event_ids) - allowed:
+                raise ValueError("Decision summary must cite only actually observed event IDs")
+        has_meetings = (action.meeting_requests or action.meeting_acknowledgements or
+                        action.meeting_messages or action.meeting_reports or action.close_meetings)
+        if has_meetings and stage != "member_floor":
+            raise ValueError("Member meeting actions are allowed only on the member floor")
         if stage in ("prepare", "internal", "announce", "submit") and action.commitment is None:
             raise ValueError(f"{stage} requires a structured commitment")
         if stage == "mandate" and (self.role != Role.HEAD or action.mandate is None):
@@ -134,6 +157,30 @@ class OfflineBackend:
     label = "offline-scripted-v1"
 
     def decide(self, member: DelegationMember, context: dict[str, Any]) -> MemberAction:
+        action = self._decide(member, context)
+        stage = context["stage"]
+        descriptions = {
+            "prepare": ("Apply my role priorities to the delegation's experimental baseline.", "Prepare my preferred proposal"),
+            "internal": ("Balance my role priorities with the team's shared proposals and observed climate result.", "Share my revised preference with the team"),
+            "mandate": ("Combine the shared member proposals using the configured delegation decision rule.", "Propose a national mandate"),
+            "vote": ("Rank shared candidates by their policy distance from my preference.", "Submit my individual ballot"),
+            "announce": ("Use the approved national mandate for the initial public commitment.", "Announce the team's position"),
+            "negotiate": ("Seek reciprocal action within our experimental transition and finance limits.", "Propose or acknowledge conditional offers"),
+            "submit": ("Reflect accepted offers in an unconditional final commitment.", "Submit the final national commitment"),
+            "member_floor": ("Use only addressed invitations and acknowledged rooms; report discussion outcomes explicitly to my team.", "Choose a meeting-protocol action"),
+        }
+        summary, intended = descriptions[stage]
+        if stage == "member_floor":
+            if action.meeting_requests: intended = "Request a private meeting with other members"
+            elif action.meeting_acknowledgements: intended = "Accept or decline addressed invitations"
+            elif action.meeting_reports: intended = "Record the conversation outcome and notify my team"
+            elif action.meeting_messages: intended = "Contribute to an acknowledged private conversation"
+            else: intended = "Wait; no eligible meeting action is available"
+        action.decision_summary = DecisionSummary(summary=summary, intended_action=intended,
+            evidence_event_ids=[e["id"] for e in context.get("events", [])[-3:]])
+        return action
+
+    def _decide(self, member: DelegationMember, context: dict[str, Any]) -> MemberAction:
         stage, round_number = context["stage"], context["round"]
         role, brief = member.priority_role, member.brief
         if stage == "prepare":
@@ -181,6 +228,37 @@ class OfflineBackend:
             ranked = sorted(candidates, key=lambda key: (policy_distance(member.preferred, ClimateCommitment.model_validate(candidates[key]), role), key))
             approved = [key for key in ranked if policy_distance(member.preferred, ClimateCommitment.model_validate(candidates[key]), role) <= .08]
             return MemberAction(ranked_candidates=ranked, approved_candidates=approved)
+        if stage == "member_floor":
+            step = context["floor_step"]
+            rooms = context["member_meetings"]["meetings"]
+            if step == 0:
+                roster = context["member_meetings"]["participants"]
+                others = [p for p in roster if p["delegation"] != brief.delegation.value]
+                if member.role == Role.CLIMATE:
+                    first = next(p for p in others if p["role"] == Role.ECONOMIC)
+                    second = next(p for p in others if p["role"] == Role.CLIMATE and p["delegation"] != first["delegation"])
+                    invitees = [first["id"], second["id"]]
+                else:
+                    invitees = [next(p for p in others if p["role"] == member.role.value)["id"]]
+                return MemberAction(meeting_requests=[MeetingInvitation(invitees=invitees,
+                    topic="Implementation and climate finance" if member.role != Role.HEAD else "Reciprocal national commitments")])
+            pending = {m["id"]: "accept" for m in rooms if m["status"] == "pending"
+                       and m["acknowledgements"].get(member.name) == "pending"}
+            if pending:
+                return MemberAction(meeting_acknowledgements=pending)
+            active = sorted([m for m in rooms if m["status"] == "active"],
+                            key=lambda m: (m["sender"] != member.name, m["id"]))
+            if step < member.config.member_floor_ticks - 1:
+                public = context["public_commitments"][brief.delegation.value]
+                text = (f"Speaking as {member.role.value}, our published proposal is {public['annual_reduction_rate_percent']:.2f}% annual reductions. "
+                        f"My focus is {member.personality} Can we coordinate implementation and reciprocal action?")
+                return MemberAction(meeting_messages=[MeetingMessage(meeting_id=m["id"], text=text) for m in active[:2]])
+            reports = [MeetingReport(meeting_id=m["id"],
+                summary=f"We discussed {m['topic'].lower()} with {len(m['participants']) if 'participants' in m else len(m['invitees'])+1} members. No binding national commitment was adopted in this conversation.",
+                next_steps=["Review implementation and reciprocal action with our delegation"], notify_team=True)
+                for m in active[:2] if m["messages"] and not any(r["author"] == member.name for r in m.get("reports", []))]
+            own = [m["id"] for m in active if m["sender"] == member.name]
+            return MemberAction(meeting_reports=reports, close_meetings=own[:1])
         mandate = TeamMandate.model_validate(context["mandate"])
         if stage == "announce":
             proposal = mandate.approved_commitment
@@ -265,9 +343,16 @@ class GeminiBackend:
             "Use ONLY the authorized information below. No other agent's hidden preferences or team transcripts are available. "
             "The climate evaluator may be a clearly labelled mock; do not treat it as climate science. "
             "Output the MemberAction schema; put private reasoning ONLY in private_strategy during prepare. "
+            "For each action include a concise decision_summary: observed evidence, priority and intended action, NOT hidden chain-of-thought. "
+            "Cite only event IDs actually present in the authorized observations; summaries remain individual-private. "
             "During internal, speak to your team and give your preferred commitment. During mandate, return a TeamMandate. "
             "During vote, rank EVERY candidate ID exactly once and list acceptable candidate IDs in approved_candidates. During announce/submit, return an unconditional commitment. "
             "Only negotiate can create offers or accept/reject visible offer IDs. offered_changes modify YOUR region only. "
+            "During member_floor any member may request meetings, accept/decline addressed invitations, send messages to active rooms, "
+            "report outcomes and notify their own team, or close a meeting. Use exact registered member and visible meeting IDs. "
+            "All invitees must acknowledge within five ticks before messages can start. On timeout choose another action. "
+            "Never disclose your team's internal transcript or your private decision summary to foreign participants. "
+            "Describe agreements as participant reports, not verified national commitments. "
             "Valid condition keys are REGION_climate_fund_contribution_minimum, "
             "REGION_annual_reduction_rate_percent_minimum and REGION_emissions_peak_year_maximum. "
             "Final commitments are unconditional; offers count as fulfilled only if all parties accept and final actions meet them. "

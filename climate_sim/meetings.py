@@ -33,6 +33,8 @@ class Meeting(Model):
     acknowledgements: dict[str, Literal["pending", "accepted", "declined"]]
     status: Literal["pending", "active", "declined", "expired", "closed"] = "pending"
     messages: list[dict] = Field(default_factory=list)
+    round: int = Field(default=1, ge=1)
+    reports: list[dict] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def distinct_members(self):
@@ -77,7 +79,7 @@ class MeetingHub:
     def _record(self, kind: str, meeting: Meeting, actor: str | None = None):
         # Individual scope lists exact participants, never whole delegations.
         self.store.append(kind, {"tick": self.tick, "meeting": meeting.model_dump(mode="json")},
-                          round=self.round_number, visibility="individual",
+                          round=meeting.round, visibility="individual",
                           owners=meeting.participants, actor=actor)
 
     def request(self, actor: str, invitees: list[str], topic: str) -> Meeting:
@@ -86,6 +88,7 @@ class MeetingHub:
             self._known(invitee)
         meeting = Meeting(id=f"meeting-{len(self.meetings) + 1:04d}", sender=actor,
             invitees=invitees, topic=topic.strip(), created_tick=self.tick,
+            round=self.round_number,
             expires_tick=self.tick + self.acknowledgement_ticks,
             acknowledgements={p: "pending" for p in invitees})
         self.meetings[meeting.id] = meeting
@@ -127,6 +130,32 @@ class MeetingHub:
         self._record("meeting_closed", meeting, actor)
         return meeting.model_copy(deep=True)
 
+    def report(self, actor: str, meeting_id: str, summary: str, *,
+               agreements: list[str] | None = None, next_steps: list[str] | None = None,
+               notify_team: bool = True) -> dict:
+        meeting = self._visible(actor, meeting_id)
+        if meeting.status not in ("active", "closed"):
+            raise ValueError("Only an acknowledged conversation can have an outcome report")
+        if not isinstance(summary, str) or not 1 <= len(summary.strip()) <= 1200:
+            raise ValueError("Outcome summary requires 1..1200 characters")
+        if any(r["author"] == actor for r in meeting.reports):
+            raise ValueError("This participant already reported this conversation")
+        for item in [*(agreements or []), *(next_steps or [])]:
+            if not isinstance(item, str) or len(item) > 1200:
+                raise ValueError("Report items must be short strings")
+        report = {"id": f"{meeting_id}-report-{len(meeting.reports)+1:03d}",
+                  "meeting_id": meeting_id, "author": actor, "tick": self.tick,
+                  "round": meeting.round, "summary": summary.strip(),
+                  "agreements": agreements or [], "next_steps": next_steps or [],
+                  "interpretation": "Participant-authored report, not independently verified agreement",
+                  "notified_delegation": self.participants[actor].delegation if notify_team else None}
+        meeting.reports.append(report)
+        self._record("meeting_outcome_reported", meeting, actor)
+        if notify_team:
+            self.store.append("team_meeting_report", report, round=meeting.round,
+                visibility="delegation", owners=[self.participants[actor].delegation], actor=actor)
+        return dict(report)
+
     def advance(self, ticks: int = 1):
         if not isinstance(ticks, int) or isinstance(ticks, bool) or not 1 <= ticks <= 100:
             raise ValueError("Advance requires 1..100 integer ticks")
@@ -141,7 +170,11 @@ class MeetingHub:
     def view(self, actor: str | None = None, *, researcher: bool = False) -> dict:
         if not researcher:
             self._known(actor)
+        notifications = [e.model_dump(mode="json") for e in self.store.events
+                         if e.kind == "team_meeting_report" and
+                         (researcher or e.owners == [self.participants[actor].delegation])]
         return {"tick": self.tick, "acknowledgement_ticks": self.acknowledgement_ticks,
+                "notifications": notifications,
                 "participants": [p.model_dump(mode="json") for p in self.participants.values()],
                 "meetings": [m.model_dump(mode="json") for m in self.meetings.values()
                              if researcher or actor in m.participants]}

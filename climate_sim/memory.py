@@ -51,10 +51,11 @@ class EventStore:
                 stream.write(event.model_dump_json() + "\n")
         return event
 
-    def view(self, agent_id: str, delegation: str, limit: int) -> list[dict]:
+    def view(self, agent_id: str, delegation: str, limit: int, *, exclude_kinds: set[str] | None = None) -> list[dict]:
         # Copy at the boundary: mutating an agent's view cannot mutate another agent's memory.
         return [event.model_dump(mode="json") for event in self.events
-                if event.visible_to(agent_id, delegation)][-limit:]
+                if event.visible_to(agent_id, delegation)
+                and event.kind not in (exclude_kinds or set())][-limit:]
 
     def public_view(self) -> list[dict]:
         return [event.model_dump(mode="json") for event in self.events if event.visibility == "public"]

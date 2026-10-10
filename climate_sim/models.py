@@ -195,6 +195,32 @@ class SimulationConfig(Model):
     agent_models: dict[str, str] = Field(default_factory=dict)
     us_variant: Literal["national", "climate_alliance_proxy"] = "national"
     stop_on_target: bool = False
+    member_meetings: bool = True
+    member_floor_ticks: int = Field(default=5, ge=3, le=10)
+
+
+class DecisionSummary(Model):
+    summary: str = Field(min_length=1, max_length=800)
+    intended_action: str = Field(min_length=1, max_length=300)
+    evidence_event_ids: list[str] = Field(default_factory=list, max_length=8)
+
+
+class MeetingInvitation(Model):
+    invitees: list[str] = Field(min_length=1, max_length=17)
+    topic: str = Field(min_length=1, max_length=300)
+
+
+class MeetingMessage(Model):
+    meeting_id: str
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class MeetingReport(Model):
+    meeting_id: str
+    summary: str = Field(min_length=1, max_length=1200)
+    agreements: list[str] = Field(default_factory=list, max_length=5)
+    next_steps: list[str] = Field(default_factory=list, max_length=5)
+    notify_team: bool = True
 
 
 class MemberAction(Model):
@@ -206,3 +232,9 @@ class MemberAction(Model):
     offer_responses: dict[str, Literal["accept", "reject"]] = Field(default_factory=dict)
     ranked_candidates: list[str] = Field(default_factory=list)
     approved_candidates: list[str] = Field(default_factory=list)
+    decision_summary: DecisionSummary | None = None
+    meeting_requests: list[MeetingInvitation] = Field(default_factory=list, max_length=1)
+    meeting_acknowledgements: dict[str, Literal["accept", "decline"]] = Field(default_factory=dict)
+    meeting_messages: list[MeetingMessage] = Field(default_factory=list, max_length=2)
+    meeting_reports: list[MeetingReport] = Field(default_factory=list, max_length=2)
+    close_meetings: list[str] = Field(default_factory=list, max_length=1)
