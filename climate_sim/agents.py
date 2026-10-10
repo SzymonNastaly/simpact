@@ -36,9 +36,10 @@ def live_action_schema(stage: str, *, can_finish: bool = False) -> dict:
         "internal": ["speech", "commitment", "decision_summary"],
         "summary": ["round_summary", "decision_summary"],
         "plan": ["action_plan", "decision_summary"],
-        "nominate": ["partner_requests", "decision_summary"],
-        "bilateral": ["speech", "end_conversation", "decision_summary"],
-        "debrief": ["meeting_report", "decision_summary"],
+        "nominate": ["partner_requests", "done_talking", "decision_summary"],
+        "bilateral": ["speech", "end_conversation", "done_talking", "decision_summary"],
+        "debrief": ["meeting_report", "done_talking", "decision_summary"],
+        "head_results": ["country_result", "decision_summary"],
         "mandate": ["mandate", "decision_summary"],
         "vote": ["ranked_candidates", "approved_candidates", "decision_summary"],
         "announce": ["speech", "commitment", "decision_summary"],
@@ -159,6 +160,14 @@ class DelegationMember(entity.Entity):
 
     def validate_action(self, action: MemberAction, context: dict) -> None:
         stage = context["stage"]
+        if action.done_talking and stage not in BILATERAL_STAGES:
+            raise ValueError("done_talking is allowed only in bilateral stages")
+        if action.done_talking and action.partner_requests:
+            raise ValueError("A finished agent cannot request another conversation")
+        if (action.country_result is not None) != (stage == "head_results"):
+            raise ValueError("country_result is required only during head_results")
+        if stage == "head_results" and self.role != Role.HEAD:
+            raise ValueError("Only head negotiators report country results")
         if action.finish_discussion or action.finish_reason:
             if not (action.finish_discussion and action.finish_reason and self.role == Role.HEAD
                     and stage == "internal" and context.get("continuous_discussion")
@@ -293,6 +302,7 @@ class OfflineBackend:
             "nominate": ("Seek members of other delegations who matter most to my priorities.", "Choose bilateral partners"),
             "bilateral": ("State my position on the topic and test where the other side can move.", "Talk one to one"),
             "debrief": ("Pass on what the other side said, without treating it as a commitment.", "Report the bilateral to my team"),
+            "head_results": ("Assess the bilateral reports against our national goals.", "Report our results and satisfaction"),
             "press": ("Restate my group's goals against the latest public commitments and mock outcome.", "Give a public statement"),
         }
         summary, intended = descriptions[stage]
@@ -311,6 +321,15 @@ class OfflineBackend:
     def _decide(self, member: DelegationMember, context: dict[str, Any]) -> MemberAction:
         stage, round_number = context["stage"], context["round"]
         role, brief = member.priority_role, member.brief
+        if stage == "head_results":
+            from .models import CountryResult
+            reports = [e for e in context["events"] if e["kind"] == "team_meeting_report"]
+            return MemberAction(country_result=CountryResult(
+                summary=f"{brief.title}: our team reported {len(reports)} bilateral conversations.",
+                satisfaction=5, satisfaction_reason="Scripted demonstration: discussions provided information, but no binding final agreement was signed.",
+                achievements=["Collected counterpart positions"] if reports else [],
+                unresolved_issues=["Tentative understandings still need formal commitments"],
+                next_steps=["Review the reported understandings against our national priorities"]))
         if stage == "nominate":
             requests = self._partner_requests(member, context)
             if context.get('allocator_mode'):
@@ -606,6 +625,17 @@ class GeminiBackend:
                              "Respond to what your partner just said; keep it short and natural, like a real conversation.",
                 "debrief": "report the bilateral that just ended to your own team. Return meeting_report and decision_summary.",
             }[context["stage"]]
+        elif context["stage"] == "head_results":
+            system += (
+                " CURRENT STAGE: heads return to the plenary and report Round 2 results. Return country_result "
+                "and decision_summary. Use ONLY your own team's authorized meeting reports, Round 1 plans and "
+                "national goals. In country_result give a public summary, achievements, unresolved_issues and next_steps. "
+                "Rate how satisfied YOUR COUNTRY is with the actual outcome from 0 (very unhappy) to 10 (very happy), "
+                "and explain the score in satisfaction_reason. This is your self-reported assessment, not a measured "
+                "utility or climate result. Be candid about tradeoffs and unmet goals; no automatic positive rating. "
+                "Distinguish tentative understandings from binding commitments. No final climate agreement exists "
+                "unless one is explicitly in your observations. Do not disclose private strategy or team transcripts."
+            )
         elif context["stage"] == "summary":
             system += (
                 " CURRENT STAGE: end-of-round summary. Return round_summary and decision_summary. "
@@ -626,7 +656,9 @@ class GeminiBackend:
                 " This is a continuous meeting allocator, with no slots. Check the current availability directory "
                 "and your Round 1 action plan and team reports. Rank up to three next partners with concrete topics "
                 "and what you need to learn or update. Prefer free agents. You can meet at most five distinct people, "
-                "one at a time. If previous_requests are present, they waited ten seconds without allocation: "
+                "one at a time. Set done_talking=true as soon as your work is complete, including during a bilateral or debrief. "
+                "This permanently removes you from the pool for this round; use an empty partner_requests list when done. "
+                "If previous_requests are present, they waited ten seconds without allocation: "
                 "adjust priorities toward available alternatives. During debrief, give your team a factual update "
                 "and concrete next_steps naming who should be updated or consulted next. Return no partner_requests when your work is done "
                 "or nobody eligible remains. Never claim an allocation or agreement before it exists. "

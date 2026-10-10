@@ -350,10 +350,14 @@ class LiveLab(Lab):
         with self.lock:
             result = super().bilaterals(scope)
             result.update(mode="live", revision=self.revision)
+            result['country_results'] = [dict(e.payload, agent=e.actor) for e in self.events
+                                         if e.round == 2 and e.kind == 'country_result']
             meetings = self.sim.bilaterals
             if scope == "researcher":
                 result["live"] = {**self.bilateral, "enabled": meetings is not None, "open": self._bilaterals_open(),
                     "concluded": sum(c["phase"] == "completed" for c in self.controls.values()), "countries": len(self.controls),
+                    "phase": "reporting" if meetings and meetings._events("heads_returned") and not meetings.results_done else
+                             "completed" if meetings and meetings.done else "closing" if meetings and meetings.stopping else "talking",
                     "allocator": True, "max_partners": 5, "wait_seconds": 10,
                     "message_limit": self.sim.config.bilateral_messages, "done": bool(meetings and meetings.done)}
                 result['queue'] = meetings.snapshot() if meetings else []
@@ -381,12 +385,18 @@ class LiveLab(Lab):
                 meetings.reset_waits()
                 control.update(active=True, error=None, status="thinking" if control["thinking_agents"] else "queued")
             self.bilateral_engine.play()
+        elif operation == "finish":
+            if not self._bilaterals_open():
+                raise ValueError("Round 2 opens after Round 1 concludes")
+            meetings.stop_talking()
+            control.update(active=True, error=None, status="thinking" if control["thinking_agents"] else "queued")
+            self.bilateral_engine.play()
         elif operation == "pause":
             # In-flight calls finish; every agent's loop then waits at its next turn.
             control.update(active=False, status="pausing" if control["thinking_agents"] else "paused")
             self.bilateral_engine.pause()
         else:
-            raise ValueError("Use start or pause for bilaterals")
+            raise ValueError("Use start, pause or finish for bilaterals")
         self._changed()
         return dict(control)
 

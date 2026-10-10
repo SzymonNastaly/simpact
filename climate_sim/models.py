@@ -265,6 +265,15 @@ class RoundAssignment(Model):
     target_round: int = Field(ge=2, le=11)
 
 
+class CountryResult(Model):
+    summary: str = Field(min_length=1, max_length=2400)
+    satisfaction: int = Field(ge=0, le=10)
+    satisfaction_reason: str = Field(min_length=1, max_length=1200)
+    achievements: list[str] = Field(default_factory=list, max_length=8)
+    unresolved_issues: list[str] = Field(default_factory=list, max_length=8)
+    next_steps: list[str] = Field(default_factory=list, max_length=8)
+
+
 class MemberAction(Model):
     speech: str = Field(default="", max_length=5000)
     private_strategy: str | None = Field(default=None, max_length=5000)
@@ -280,5 +289,7 @@ class MemberAction(Model):
     round_summary: RoundSummary | None = None
     action_plan: list[RoundAssignment] = Field(default_factory=list, max_length=24)
     partner_requests: list[PartnerRequest] = Field(default_factory=list, max_length=3)
+    done_talking: bool = False
+    country_result: CountryResult | None = None
     end_conversation: bool = False
     meeting_report: MeetingReport | None = None

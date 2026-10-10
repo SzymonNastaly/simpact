@@ -385,7 +385,7 @@ window.SimpactMarkdown = (() => {
   }
 
   // Round 2 presence: every country's people, ringed by what they are doing right now.
-  const PRESENCE = {busy:['talking','Talking'],updating:['reporting','Reporting to team'],planning:['planning','Choosing partners'],free:['free','Free'],finished:['done','Done']};
+  const PRESENCE = {busy:['talking','Talking'],updating:['reporting','Reporting to team'],planning:['planning','Choosing partners'],free:['free','Free'],finished:['done','Done talking']};
   function renderPresence() {
     const queue = bilaterals?.queue || [];
     $('presence-board').hidden = !queue.length;
@@ -412,6 +412,9 @@ window.SimpactMarkdown = (() => {
     const meetings = meetingsOf();
     if (!meetings.some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetings.find(m => m.status === 'active')?.id || meetings[0]?.id || null;
     renderPresence();
+    const results = bilaterals.country_results || [];
+    $('country-results').hidden = !results.length && bilaterals.live?.phase !== 'reporting';
+    replaceContent('country-results', `<h2>Heads report back</h2><p class="conversation-note">Each country's satisfaction is its head negotiator's own assessment of Round 2.</p>${results.map(result => `<article class="round-summary"><h3>${esc(groupName(agentById(result.agent)))}</h3><p><strong>${esc(result.satisfaction)} / 10 satisfied</strong></p><div class="md">${md(result.summary)}</div><div class="md">${md(result.satisfaction_reason)}</div>${[['Achievements',result.achievements],['Still unresolved',result.unresolved_issues],['Next steps',result.next_steps]].map(([title,items]) => items?.length ? `<h4>${title}</h4><ul>${items.map(item => `<li>${mdi(item)}</li>`).join('')}</ul>` : '').join('')}</article>`).join('') || empty('The heads are preparing their reports from their teams’ discussions.')}`);
     const card = meeting => `<button type="button" class="meeting-card${meeting.status === 'active' ? ' live' : ' past'}${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${mdi(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${meeting.status === 'active' ? '<i class="live-dot" aria-hidden="true"></i>' : ''}${esc(meetingState(meeting))}</span><span>${meeting.messages.length} ${meeting.messages.length === 1 ? 'message' : 'messages'}</span></span></button>`;
     const now = meetings.filter(meeting => meeting.status === 'active'), earlier = meetings.filter(meeting => meeting.status !== 'active').reverse();
     replaceContent('bilateral-slots', meetings.length ? `<h2>Happening now <small>${now.length}</small></h2>${now.map(card).join('') || empty('No conversation is running right now.')}
@@ -427,10 +430,13 @@ window.SimpactMarkdown = (() => {
     $('bilateral-controls').hidden = !live;
     if (!live) return;
     $('reset-round-two').disabled = controlPending || !live.open;
+    $('finish-bilaterals').disabled = controlPending || !live.open || live.done || live.phase === 'closing' || live.phase === 'reporting';
     const thinking = live.thinking_agents.length;
-    const statuses = {idle:'Ready to begin',queued:'Waiting for the next step',paused:'Bilaterals paused',completed:'All agents have finished their conversation plans',error:live.error};
+    const statuses = {idle:'Ready to begin',queued:'Waiting for the next step',paused:'Bilaterals paused',completed:'Round 2 complete · all heads have reported',error:live.error};
     $('bilateral-status').textContent = !live.open ? `Opens once every delegation has concluded Round 1 · ${live.concluded} of ${live.countries} concluded`
       : live.status === 'thinking' ? `${thinking} ${thinking === 1 ? 'agent is' : 'agents are'} thinking…` : live.status === 'pausing' ? 'Pausing after the current step…' : statuses[live.status] || live.status;
+    if (live.phase === 'reporting') $('bilateral-status').textContent = 'The heads are reporting the results';
+    if (live.phase === 'closing') $('bilateral-status').textContent = 'Finishing current calls and sending reports back to the teams';
     $('bilateral-detail').textContent = `Up to 5 people per agent · replan after 10s waiting · up to ${live.message_limit} messages per conversation`;
     $('bilateral-control').textContent = live.done ? 'Bilaterals complete' : live.active ? 'Pause bilaterals' : live.status === 'idle' ? 'Start Round 2' : 'Continue conversations';
     $('bilateral-control').disabled = controlPending || !live.open || live.done || live.status === 'pausing';
@@ -444,7 +450,7 @@ window.SimpactMarkdown = (() => {
     if (!meeting) { replaceContent('bilateral-conversation', ''); return; }
     const side = id => id === meeting.initiator ? 'left' : 'right';
     const asked = meeting.mutual ? 'Both asked for this meeting.' : `${fullName(meeting.initiator)} asked for this meeting.`;
-    const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : `${fullName(meeting.closed_by)} ended the conversation.`;
+    const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : meeting.closed_by ? `${fullName(meeting.closed_by)} ended the conversation.` : 'Ended when discussions were stopped.';
     replaceContent('bilateral-conversation', `<p class="eyebrow">ROUND 2 · PRIVATE</p><h2>${mdi(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
       <div class="meeting-agents">${[meeting.initiator,meeting.partner].map(id => { const agent = agentById(id); return `<button type="button" class="agent-button" data-agent="${esc(id)}">${agent ? avatar(agent) : ''}<span><strong>${esc(fullName(id))}</strong><small>All thinking traces</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`; }).join('')}</div>
       <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><div class="message-text md">${md(message.text)}</div>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
@@ -483,12 +489,13 @@ window.SimpactMarkdown = (() => {
     }
   }
 
-  async function controlBilaterals() {
+  async function controlBilaterals(operation = null) {
+    if (typeof operation !== 'string') operation = null;
     if (!bilaterals?.live || controlPending) return;
     controlPending = true;
     renderBilateralControls();
     try {
-      const response = await fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({track:'bilaterals',operation:bilaterals.live.active ? 'pause' : 'start'})});
+      const response = await fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({track:'bilaterals',operation:operation || (bilaterals.live.active ? 'pause' : 'start')})});
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'The bilaterals control failed. Please try again.');
       Object.assign(bilaterals.live, await response.json());
     } catch (error) { showError(error); }
@@ -609,6 +616,7 @@ window.SimpactMarkdown = (() => {
   $('back-to-countries').addEventListener('click',goBack);
   $('bilaterals-entry').addEventListener('click',openBilaterals);
   $('back-from-bilaterals').addEventListener('click',closeBilaterals);
+  $('finish-bilaterals').addEventListener('click', () => controlBilaterals('finish'));
   $('reset-round-one').addEventListener('click', () => resetRound(1));
   $('reset-round-two').addEventListener('click', () => resetRound(2));
   $('bilateral-control').addEventListener('click',controlBilaterals);

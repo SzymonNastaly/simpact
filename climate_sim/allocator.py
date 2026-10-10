@@ -24,6 +24,33 @@ class AgentAllocator(Bilaterals):
         # Compatibility with archived meeting records; never a scheduling barrier.
         return 1
 
+    @property
+    def stopping(self):
+        return bool(self._events('bilaterals_stopped'))
+
+    def finished(self, name):
+        return any(e.actor == name for e in self._events('agent_done_talking'))
+
+    def mark_finished(self, name, reason):
+        if not self.finished(name):
+            self.store.append('agent_done_talking', {'reason': reason}, round=self.round,
+                              visibility='individual', owners=[name], actor=name)
+
+    def stop_talking(self):
+        if not self.stopping:
+            self.store.append('bilaterals_stopped', {'reason': 'manual'}, round=self.round, visibility='public')
+        for name in self.hub.participants:
+            self.mark_finished(name, 'manual_stop')
+
+    @property
+    def heads(self):
+        return [p.id for p in self.hub.participants.values() if p.role == 'head_negotiator']
+
+    @property
+    def results_done(self):
+        reported = {e.actor for e in self._events('country_result')}
+        return all(name in reported for name in self.heads)
+
     def _nominations(self):
         plans = {}
         for e in self.store.events:
@@ -53,16 +80,18 @@ class AgentAllocator(Bilaterals):
         self.waiting_since = {name: self.clock() for name in self._nominations()}
 
     def available(self, name):
-        return (len(self.partners(name)) < self.max_partners and not self.active_meeting(name)
+        return (not self.stopping and not self.finished(name) and len(self.partners(name)) < self.max_partners and not self.active_meeting(name)
                 and not self.pending_report(name) and name not in self.inflight)
 
     def _candidates(self, name):
         # Agents who opted out (an empty plan) are not candidates: asking them would wait forever.
         plans = self._nominations()
         return [p for p in self.hub.participants if p != name and p not in self.partners(name)
-                and len(self.partners(p)) < self.max_partners and not (p in plans and not plans[p])]
+                and not self.finished(p) and len(self.partners(p)) < self.max_partners and not (p in plans and not plans[p])]
 
     def allocate(self):
+        if self.stopping:
+            return
         plans = self._nominations()
         free = {name for name in plans if self.available(name) and plans[name]}
         # Don't reserve an agent while it is revising its plan or reporting a previous meeting.
@@ -78,7 +107,7 @@ class AgentAllocator(Bilaterals):
     def conversations_done(self):
         plans = self._nominations()
         return not (self.inflight & set(self.hub.participants)) and all(not self.active_meeting(name) and not self.pending_report(name)
-            and (len(self.partners(name)) >= self.max_partners or not self._candidates(name)
+            and (self.finished(name) or len(self.partners(name)) >= self.max_partners or not self._candidates(name)
                  or (name in plans and not plans[name])) for name in self.hub.participants)
 
     def _current(self, kind):
@@ -91,11 +120,25 @@ class AgentAllocator(Bilaterals):
 
     @property
     def done(self):
-        return self.conversations_done and self.relations_done and (not self._meetings() or bool(self._current('agent_metrics')))
+        return self.conversations_done and self.results_done and self.relations_done and (not self._meetings() or bool(self._current('agent_metrics')))
 
     def due(self):
+        if self.stopping:
+            for meeting in self._meetings():
+                if meeting.status == 'active' and not (set(meeting.participants) & self.inflight):
+                    self.hub.close(meeting.id, reason='ended')
+        for name in self.hub.participants:
+            if len(self.partners(name)) >= self.max_partners:
+                self.mark_finished(name, 'five_conversations')
+            elif not self._candidates(name):
+                self.mark_finished(name, 'no_eligible_partners')
         self.allocate()
         if self.conversations_done:
+            if not self.results_done:
+                if not self._events('heads_returned'):
+                    self.store.append('heads_returned', {}, round=self.round, visibility='public')
+                reported = {e.actor for e in self._events('country_result')}
+                return [('head_results', name) for name in self.heads if name not in reported and name not in self.inflight]
             if self.done:
                 return []
             if not self.relations_done:
@@ -109,11 +152,11 @@ class AgentAllocator(Bilaterals):
                 continue
             meeting = self.active_meeting(name)
             if meeting:
-                if self.next_speaker(meeting) == name:
+                if not self.stopping and self.next_speaker(meeting) == name:
                     due.append(('bilateral', name))
             elif self.pending_report(name):
                 due.append(('debrief', name))
-            elif len(self.partners(name)) < self.max_partners and self._candidates(name):
+            elif not self.stopping and not self.finished(name) and len(self.partners(name)) < self.max_partners and self._candidates(name):
                 if name not in plans:
                     due.append(('nominate', name))
                 elif plans[name]:
@@ -129,9 +172,9 @@ class AgentAllocator(Bilaterals):
             meeting = self.active_meeting(name)
             reporting = self.pending_report(name)
             count = len(self.partners(name))
-            state = ('busy' if meeting else 'updating' if reporting else 'planning' if name in self.inflight
-                     else 'finished' if count >= self.max_partners or not self._candidates(name)
-                     or (name in plans and not plans[name]) else 'free')
+            state = ('busy' if meeting else 'updating' if reporting
+                     else 'finished' if self.finished(name) or count >= self.max_partners or not self._candidates(name)
+                     or (name in plans and not plans[name]) else 'planning' if name in self.inflight else 'free')
             result.append({'agent': name, 'state': state, 'meeting_id': meeting.id if meeting else None,
                            'partners_met': count, 'max_partners': self.max_partners,
                            'waiting_seconds': min(self.wait_seconds, round(max(0, now-self.waiting_since.get(name, now)), 1)),
@@ -154,7 +197,14 @@ class AgentAllocator(Bilaterals):
 
     def resolve(self, stage, actions):
         for name, action in actions.items():
-            if stage == RELATIONS_STAGE:
+            if action.done_talking:
+                self.mark_finished(name, 'agent_ready')
+            if stage == 'head_results':
+                if name not in self.heads or action.country_result is None:
+                    raise ValueError('Only heads can report country results')
+                self.store.append('country_result', {'delegation': self.hub.participants[name].delegation,
+                    **action.country_result.model_dump(mode='json')}, round=self.round, visibility='public', actor=name)
+            elif stage == RELATIONS_STAGE:
                 count = len(self._meetings())
                 self.store.append('bilateral_relation_rating', {'pairs':json.loads(action.speech)['pairs'], 'meeting_count':count},
                                   round=self.round, visibility='individual', owners=['researcher'], actor=name)
@@ -187,13 +237,15 @@ class AgentAllocator(Bilaterals):
                     raise ValueError('Choose distinct eligible partners who have not already met you')
                 self.store.append('agent_partner_plan', {'requests':[r.model_dump(mode='json') for r in action.partner_requests]},
                                   round=self.round, visibility='individual', owners=[name], actor=name)
+                if not action.partner_requests:
+                    self.mark_finished(name, 'agent_ready')
                 self.waiting_since[name] = self.clock()
             elif stage == 'bilateral':
                 meeting = self.active_meeting(name)
                 if not meeting or self.next_speaker(meeting) != name:
                     raise ValueError('Not your turn in an active conversation')
                 self.hub.message(name, meeting.id, action.speech)
-                if action.end_conversation:
+                if action.end_conversation or action.done_talking or self.stopping:
                     self.hub.close(meeting.id, actor=name, reason='ended')
                 elif len(meeting.messages) >= self.message_limit:
                     self.hub.close(meeting.id, reason='limit')
