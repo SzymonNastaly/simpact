@@ -57,8 +57,10 @@ class AgentAllocator(Bilaterals):
                 and not self.pending_report(name) and name not in self.inflight)
 
     def _candidates(self, name):
+        # Agents who opted out (an empty plan) are not candidates: asking them would wait forever.
+        plans = self._nominations()
         return [p for p in self.hub.participants if p != name and p not in self.partners(name)
-                and len(self.partners(p)) < self.max_partners]
+                and len(self.partners(p)) < self.max_partners and not (p in plans and not plans[p])]
 
     def allocate(self):
         plans = self._nominations()
