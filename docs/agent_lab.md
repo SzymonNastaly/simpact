@@ -140,3 +140,6 @@ node --check frontend/app.js
 Also exercise a live country through discussion, head closure, every member's
 summary and the next-round action plan. Check Pause/Continue during closing and
 restoration of a saved session. Browser visual verification is separate.
+
+Round 1 runs one worker per country, so active countries make provider calls concurrently.
+Within each country, agents still speak sequentially and each call sees all prior team messages.
