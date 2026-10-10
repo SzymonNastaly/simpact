@@ -204,7 +204,7 @@ class Lab:
         thinking = lambda event_id: self.thinking(trace_events[event_id].payload) if event_id in trace_events else None
         rounds: dict[int, dict[int, dict]] = {}
         slot_of = lambda number, slot: rounds.setdefault(number, {}).setdefault(slot, {
-            "slot": slot, "nominations": {}, "unmatched": [], "paired": False, "finished": False, "meetings": []})
+            "slot": slot, "nominations": {}, "unmatched": [], "paired": False, "finished": False, "meetings": [], "summary": None})
         for event in visible:
             if event.kind == "bilateral_nominations":
                 slot_of(event.round, event.payload["slot"])["nominations"][event.actor] = {
@@ -214,6 +214,9 @@ class Lab:
                 slot.update(paired=True, unmatched=event.payload["unmatched"])
             elif event.kind == "bilateral_slot_finished":
                 slot_of(event.round, event.payload["slot"])["finished"] = True
+            elif event.kind == "bilateral_slot_summary":
+                slot_of(event.round, event.payload["slot"])["summary"] = {"text": event.payload["summary"],
+                    "trace_id": traces.get(event.id), "thinking": thinking(event.id)}
         for meeting in fold_meetings(visible).values():
             for item in (*meeting["messages"], *meeting["reports"].values()):
                 item.update(trace_id=traces.get(item["event_id"]), thinking=thinking(item["event_id"]))

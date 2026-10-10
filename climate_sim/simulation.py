@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from .bilaterals import Bilaterals, STAGES as BILATERAL_STAGES
-from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
+from .bilaterals import Bilaterals, STAGES as BILATERAL_STAGES, SUMMARY_STAGE
+from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend, Rapporteur
 from .briefs import load_briefs, load_observers, DEFAULT_BRIEFS
 from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
 from .meetings import MeetingHub, Participant
@@ -78,6 +78,7 @@ class Simulation:
                                            model=m.backend.label) for name, m in self.agents.items()],
                               store=self.store)
         self.bilaterals: Bilaterals | None = None
+        self.rapporteur = Rapporteur(model=None if config.backend == "offline" else config.default_model)
         self.store.append("configuration", {"config": config.model_dump(mode="json"),
                           "agent_models": self._model_registry,
                           "sources": {k: {"file": b.source_file, "sha256": b.source_sha256, "license": b.license, "attribution": b.attribution}
@@ -218,10 +219,15 @@ class Simulation:
         self.store.append("scene_started", {"stage": "bilaterals", "participants": list(self.agents),
                           "engine": "concordia.simultaneous", "game_master": "scheduled"},
                           round=self.current_round, visibility="individual", owners=["researcher"])
-        game_master = ScheduledGameMaster("UN Secretary-General", self.agents, self.bilaterals,
-                                          store=self.store, context=self.context)
-        run_schedule(game_master, list(self.agents.values()))
+        entities = [*self.agents.values(), self.rapporteur]
+        game_master = ScheduledGameMaster("UN Secretary-General", {e.name: e for e in entities}, self.bilaterals,
+                                          store=self.store, context=self.bilateral_context)
+        run_schedule(game_master, entities)
         self.bilaterals = None
+
+    def bilateral_context(self, member, stage: str) -> dict:
+        # The rapporteur is not a delegate: it sees the slot's record, not a member's view of the summit.
+        return self.bilaterals.context(member.name, stage) if stage == SUMMARY_STAGE else self.context(member, stage)
 
     def _press(self):
         """Observers react in public to the commitments and mock outcome just published."""

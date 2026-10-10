@@ -8,6 +8,8 @@ A round of bilaterals has one or more slots. In each slot:
 3. bilateral: each pair takes turns, opener first, until one side sets end_conversation or the message
    limit is reached. A partner who did not ask for the meeting can decline on its first turn.
 4. debrief: once its conversation ends, each participant reports to its own team.
+5. slot_summary: once every conversation has ended and been reported, a neutral rapporteur
+   summarizes the slot for the researcher. Agents never see it.
 
 State is read from the event store and meeting registry rather than kept here, so a resumed live
 session continues where it stopped. Any subset of due actions can be resolved: the batch simulation
@@ -21,6 +23,7 @@ from .memory import EventStore
 from .models import MemberAction, PartnerRequest
 
 STAGES = ("nominate", "bilateral", "debrief")
+SUMMARY_STAGE, RAPPORTEUR = "slot_summary", "rapporteur"
 
 
 def pair_requests(nominations: dict[str, list[PartnerRequest]], delegation_of: dict[str, str],
@@ -101,14 +104,30 @@ class Bilaterals:
             nominated = self._nominations()
             return [("nominate", name) for name in self.hub.participants if name not in nominated]
         reported, due = self._reported(), []
-        for meeting in self._meetings(self.slot):
+        meetings = self._meetings(self.slot)
+        for meeting in meetings:
             if meeting.status == "active":
                 due.append(("bilateral", self.next_speaker(meeting)))
             else:
                 due += [("debrief", name) for name in meeting.participants if name not in reported]
+        if not due and meetings and not self._events("bilateral_slot_summary", self.slot):
+            due.append((SUMMARY_STAGE, RAPPORTEUR))
         return due
 
     def context(self, name: str, stage: str) -> dict:
+        if stage == SUMMARY_STAGE:
+            reports = {}
+            for event in self._events("team_meeting_report", self.slot):
+                reports.setdefault(event.payload["meeting_id"], {})[event.actor] = {
+                    k: event.payload[k] for k in ("summary", "agreements", "next_steps")}
+            pairing = self._events("bilateral_pairing", self.slot)[-1].payload
+            return {"stage": stage, "round": self.round, "slot": self.slot, "unmatched": pairing["unmatched"],
+                    "requests": {actor: [r.model_dump(mode="json") for r in requests]
+                                 for actor, requests in self._nominations().items()},
+                    "meetings": [{"opened_by": m.initiator, "partner": m.partner, "topic": m.topic, "mutual": m.mutual,
+                                  "close_reason": m.close_reason, "closed_by": m.closed_by,
+                                  "messages": [{"from": x["actor"], "text": x["text"]} for x in m.messages],
+                                  "reports_to_own_team": reports.get(m.id, {})} for m in self._meetings(self.slot)]}
         if stage == "nominate":
             met = {p for m in self._meetings() if name in m.participants for p in m.participants} - {name}
             return {"bilateral_slot": self.slot, "bilateral_slots": self.slots, "already_met": sorted(met),
@@ -147,6 +166,10 @@ class Bilaterals:
                     self.hub.close(meeting.id, actor=name, reason="ended")
                 elif len(meeting.messages) >= self.message_limit:
                     self.hub.close(meeting.id, reason="limit")
+            elif stage == SUMMARY_STAGE:
+                # Researcher-only: a neutral account of the whole slot, never fed back to agents.
+                self.store.append("bilateral_slot_summary", {"slot": self.slot, "summary": action.speech},
+                                  round=self.round, visibility="individual", owners=["researcher"], actor=name)
             elif stage == "debrief":
                 if name in self._reported():
                     raise ValueError("This member already reported this slot's bilateral")
@@ -176,6 +199,7 @@ class Bilaterals:
         if self.done or not self.paired:
             return
         meetings = self._meetings(self.slot)
-        if all(m.status == "closed" for m in meetings) and {p for m in meetings for p in m.participants} <= self._reported():
+        if (all(m.status == "closed" for m in meetings) and {p for m in meetings for p in m.participants} <= self._reported()
+                and (not meetings or self._events("bilateral_slot_summary", self.slot))):
             self.store.append("bilateral_slot_finished", {"slot": self.slot, "meetings": len(meetings)},
                               round=self.round, visibility="individual", owners=["researcher"])

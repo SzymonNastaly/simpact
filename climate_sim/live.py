@@ -18,7 +18,7 @@ from typing import Callable
 from concordia.environment.step_controller import StepController
 
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
-from .bilaterals import Bilaterals
+from .bilaterals import Bilaterals, SUMMARY_STAGE
 from .lab import Lab
 from .memory import Event
 from .models import ClimateCommitment, MemberAction, SimulationConfig
@@ -160,6 +160,7 @@ class LiveLab(Lab):
                          for region in self.sim.teams}
         # Bilaterals open once every delegation has concluded Round 1; they belong to Round 2.
         self.bilateral = {"active": False, "status": "idle", "thinking_agents": [], "error": None}
+        self.sim.rapporteur.thinking_level, self.sim.rapporteur.include_thoughts = thinking_level, True
         if config.bilateral_slots:
             self.sim.bilaterals = Bilaterals(self.sim.hub, self.sim.store, round_number=2,
                 slots=config.bilateral_slots, message_limit=config.bilateral_messages)
@@ -200,13 +201,14 @@ class LiveLab(Lab):
         for region, discussion in self.discussions.items():
             self._start_loop(region, discussion, self.sim.teams[region], self.controls[region], discussion.context)
         if self.sim.bilaterals:
-            self._start_loop("bilaterals", self.sim.bilaterals, list(self.sim.agents.values()), self.bilateral,
-                             self._bilateral_context)
+            self._start_loop("bilaterals", self.sim.bilaterals, [*self.sim.agents.values(), self.sim.rapporteur],
+                             self.bilateral, self._bilateral_context)
 
     def _start_loop(self, key: str, schedule, entities: list[DelegationMember], control: dict,
                     context: Callable[[DelegationMember, str], dict]):
         """One Concordia loop per country, and one for the bilaterals; each waits paused until Start."""
         controller = StepController(start_paused=True)
+        members = {m.name: m for m in entities}
         bilateral = "thinking_agents" in control
         state = {"slot": None}
 
@@ -220,11 +222,11 @@ class LiveLab(Lab):
             self._changed()
 
         def failed(name, stage, error):
-            member = self.sim.agents[name]
+            member = members[name]
             control.update(active=False, status="error", error="Agent call failed. Continue to retry the current step.")
             self.sim.store.append("agent_call_failed", {"stage": stage,
                 "error_type": member.last_error or (type(error).__name__ if error else "AgentError"),
-                "generation": getattr(member.backend, "last_generation", None)},
+                "generation": getattr(getattr(member, "backend", None), "last_generation", None)},
                 round=schedule.round, visibility="individual", owners=[name], actor=name)
 
         def after_step(_):
@@ -251,7 +253,7 @@ class LiveLab(Lab):
                     controller.pause()
                 self._changed()
 
-        game_master = ScheduledGameMaster(f"{key} chair", {m.name: m for m in entities}, schedule,
+        game_master = ScheduledGameMaster(f"{key} chair", members, schedule,
                                           store=self.sim.store, context=context, lock=self.lock,
                                           on_acting=acting, on_failure=failed)
         thread = threading.Thread(target=run_schedule, args=(game_master, entities), name=f"{key}-loop",
@@ -266,6 +268,8 @@ class LiveLab(Lab):
 
     def _bilateral_context(self, member: DelegationMember, stage: str) -> dict:
         self.sim.current_round = 2
+        if stage == SUMMARY_STAGE:
+            return self.sim.bilateral_context(member, stage)
         context = self.sim.context(member, stage)
         context["events"] = self.sim.store.view(member.name, member.brief.delegation.value, len(self.events) + 1,
                                               exclude_kinds={"agent_trace", "agent_call_failed"})

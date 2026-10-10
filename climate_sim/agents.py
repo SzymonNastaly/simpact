@@ -709,3 +709,101 @@ class GeminiBackend:
                     raise ValueError("Model did not produce a valid climate action after three attempts") from error
                 prompt += "\nPrevious output failed validation. Repair it using this validation error: " + str(error)[:2000]
         raise AssertionError("unreachable")
+
+
+RAPPORTEUR_SYSTEM = (
+    "You are a neutral rapporteur at a UN climate summit in a research simulation, writing for the researcher only; "
+    "no delegate will read this. You receive every private one-to-one bilateral from one slot: who asked to meet whom, "
+    "each transcript, and each participant's report to its own team. In at most 250 words, summarize what happened: "
+    "who sought whom and why, where positions moved or hardened, tentative understandings, emerging coalitions, open "
+    "conflicts, and where a participant's report to its team differs from what was actually said. Be specific about "
+    "delegations and roles; do not invent anything that is not in the material. Return JSON with one field, summary."
+)
+
+
+class Rapporteur(entity.Entity):
+    """A neutral observer of the bilaterals who summarizes each slot for the researcher. Agents never see it."""
+
+    def __init__(self, *, model: str | None = None, thinking_level: str | None = None, include_thoughts: bool = False):
+        self._name = "rapporteur"
+        self.model, self.thinking_level, self.include_thoughts = model, thinking_level, include_thoughts
+        self.label = f"gemini:{model}" if model else "offline-scripted-v1"
+        self.action_traces: list[dict] = []
+        self.last_error: str | None = None
+        self._context: dict = {}
+        if model:
+            import os
+            from google import genai
+            if not os.environ.get("GEMINI_API_KEY"):
+                raise ValueError("GEMINI_API_KEY is required for --backend gemini")
+            self.client = genai.Client(api_key=os.environ["GEMINI_API_KEY"],
+                                       http_options={"timeout": 60000, "retry_options": {"attempts": 4}})
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def observe(self, observation: str) -> None:
+        self._context = json.loads(observation)
+
+    def act(self, action_spec: entity.ActionSpec = entity.DEFAULT_ACTION_SPEC) -> str:
+        self.last_error = None
+        try:
+            summary, generation = self._gemini(self._context) if self.model else (self._scripted(self._context), None)
+        except Exception as error:
+            self.last_error = type(error).__name__
+            raise RuntimeError(f"Rapporteur failed ({type(error).__name__})") from None
+        action = MemberAction(speech=summary[:5000])
+        self.action_traces.append({
+            "id": f"trace-{self.name}-{len(self.action_traces) + 1:04d}", "agent": self.name,
+            "round": self._context.get("round"), "stage": self._context["stage"], "backend": self.label,
+            "summary_source": "instrumented_scripted_policy" if generation is None else "agent_reported",
+            "decision_summary": None, "observations": [], "inputs": json.loads(json.dumps(self._context)),
+            "preference_before": None, "preference_after": None,
+            "action": action.model_dump(mode="json", exclude={"decision_summary"}),
+            **({"generation": generation} if generation else {})})
+        return f"{self.name}: {action.model_dump_json()}"
+
+    @staticmethod
+    def _scripted(context: dict) -> str:
+        lines = [f"Slot {context['slot']}: {len(context['meetings'])} conversations; {len(context['unmatched'])} agents without a partner."]
+        for meeting in context["meetings"]:
+            ended = "ended at the message limit" if meeting["close_reason"] == "limit" else f"ended by {meeting['closed_by']}"
+            lines.append(f"{meeting['opened_by']} and {meeting['partner']} discussed {meeting['topic'].lower()} "
+                         f"({len(meeting['messages'])} messages, {ended}).")
+        return " ".join(lines)
+
+    def _gemini(self, context: dict) -> tuple[str, dict]:
+        from google.genai import types
+        prompt = json.dumps(context, ensure_ascii=False)
+        generation = {"model": self.model, "thinking_level": self.thinking_level,
+                      "thought_summaries_requested": self.include_thoughts, "system_instruction": RAPPORTEUR_SYSTEM, "calls": []}
+        schema = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}
+        for attempt in range(3):
+            config = types.GenerateContentConfig(system_instruction=RAPPORTEUR_SYSTEM, temperature=.3,
+                                                 response_mime_type="application/json", response_json_schema=schema)
+            if self.thinking_level or self.include_thoughts:
+                config.thinking_config = types.ThinkingConfig(thinking_level=self.thinking_level.upper() if self.thinking_level else None,
+                                                              include_thoughts=self.include_thoughts)
+            call = {"attempt": attempt + 1, "input": prompt, "accepted": False}
+            generation["calls"].append(call)
+            started = time.monotonic()
+            response = self.client.models.generate_content(model=self.model, contents=[prompt], config=config)
+            call["latency_ms"] = round((time.monotonic() - started) * 1000)
+            usage = getattr(response, "usage_metadata", None)
+            call["usage"] = {key: getattr(usage, key, None) for key in (
+                "prompt_token_count", "candidates_token_count", "thoughts_token_count", "total_token_count")}
+            candidates = getattr(response, "candidates", None) or []
+            parts = (getattr(getattr(candidates[0], "content", None), "parts", None) or []) if candidates else []
+            call["thought_summaries"] = [p.text for p in parts if getattr(p, "thought", False) and getattr(p, "text", None)]
+            output = "".join(p.text for p in parts if not getattr(p, "thought", False) and getattr(p, "text", None)) or response.text or ""
+            call["output"] = output
+            try:
+                summary = json.loads(output)["summary"].strip()
+                if summary:
+                    call["accepted"] = True
+                    return summary, generation
+                raise ValueError("Empty summary")
+            except (ValueError, KeyError, TypeError) as error:
+                call["validation_error"] = str(error)[:500]
+        raise ValueError("Rapporteur did not return a summary after three attempts")
