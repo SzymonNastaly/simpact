@@ -13,7 +13,8 @@ from typing import Callable
 
 from .agents import Backend, GeminiBackend, OfflineBackend
 from .lab import Lab
-from .models import SimulationConfig
+from .memory import Event
+from .models import ClimateCommitment, SimulationConfig
 from .scenes import run_scene
 from .simulation import Simulation
 
@@ -21,7 +22,18 @@ from .simulation import Simulation
 class LiveLab(Lab):
     def __init__(self, config: SimulationConfig, *, output: Path | None = None,
                  thinking_level: str = "medium", message_budget: int = 12,
-                 backend_factory: Callable[[str], Backend] | None = None):
+                 backend_factory: Callable[[str], Backend] | None = None,
+                 resume: Path | None = None):
+        saved = None
+        if resume:
+            if output:
+                raise ValueError("Choose a new output directory or a saved live session to resume")
+            saved = json.loads((resume / "state.json").read_text())
+            if "live" not in saved:
+                raise ValueError("Only a live Round 1 session can be resumed")
+            config = SimulationConfig.model_validate(saved["config"])
+            thinking_level = saved["live"].get("thinking_level", thinking_level)
+            message_budget = saved["live"].get("message_budget", message_budget)
         if not 1 <= message_budget <= 100:
             raise ValueError("Message budget must be between 1 and 100")
         if thinking_level not in {"low", "medium", "high"}:
@@ -33,19 +45,48 @@ class LiveLab(Lab):
         self.sim = Simulation(config, output=output, backend_factory=backend_factory)
         self.events, self.briefs, self.hub = self.sim.store.events, self.sim.briefs, self.sim.hub
         self.observer_briefs = self.sim.observer_briefs
-        self.output, self.human_role = output, None
-        self.run_name = output.name if output else "live-round-one"
+        self.output, self.human_role = resume or output, None
+        self.run_name = self.output.name if self.output else "live-round-one"
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
         self.message_budget, self.thinking_level = message_budget, thinking_level
         self.revision = 0
         self.controls = {region: {"active": False, "status": "idle", "thinking_agent": None,
-                                 "stage": None, "messages": 0, "remaining": 0, "error": None}
+                                 "stage": None, "phase": "discussion", "messages": 0,
+                                 "remaining": 0, "error": None, "finish_requested": False,
+                                 "finish_resume": False}
                          for region in self.sim.teams}
         self.prepared: set[str] = set()
+        self.summarized = {region: set() for region in self.sim.teams}
         self.cursor = {region: 0 for region in self.sim.teams}
         self._region_cursor = 0
         self._closed = False
+        if saved:
+            self.events[:] = [Event.model_validate_json(line) for line in (resume / "events.jsonl").read_text().splitlines()]
+            self.sim.store.path = resume / "events.jsonl"
+            self.sim.output = resume
+            self.prepared = {e.actor for e in self.events if e.kind == "individual_preparation"}
+            for name, member in self.sim.agents.items():
+                state = saved["agents"][name]
+                for field, key in (("preferred", "final_preference"), ("initial_preference", "initial_preference")):
+                    setattr(member, field, ClimateCommitment.model_validate(state[key]) if state.get(key) else None)
+                member.private_strategy = state["private_strategy"]
+                member.observed_event_ids = list(state.get("observed_event_ids", []))
+                member.action_traces = [json.loads(json.dumps(e.payload)) for e in self.events
+                                        if e.kind == "agent_trace" and e.actor == name]
+            for region, control in self.controls.items():
+                control.update(saved["live"]["controls"].get(region, {}))
+                team_events = [e for e in self.events if e.round == 1 and e.owners == [region]]
+                self.summarized[region] = {e.actor for e in team_events if e.kind == "round_summary"}
+                self.cursor[region] = sum(e.kind == "internal_speech" and not e.payload.get("requested_finish", False) for e in team_events)
+                control["messages"] = sum(e.kind == "internal_speech" for e in team_events)
+                if any(e.kind == "next_round_plan" for e in team_events):
+                    control["phase"] = "completed"
+                elif any(e.kind == "discussion_ended" for e in team_events):
+                    control["phase"] = "plan" if len(self.summarized[region]) == len(self.sim.teams[region]) else "summaries"
+                control.update(active=False, thinking_agent=None, stage=None)
+                control["status"] = "completed" if control["phase"] == "completed" else "paused" if team_events else "idle"
+            self.revision = saved["live"].get("revision", 0) + 1
         self._checkpoint()
         self.worker = threading.Thread(target=self._work, name="round-one-agent-loop", daemon=True)
         self.worker.start()
@@ -55,7 +96,7 @@ class LiveLab(Lab):
                       "agents": {name: member.save_state() for name, member in self.sim.agents.items()},
                       "outcomes_by_round": {}, "commitments_by_round": {},
                       "live": {"round": 1, "controls": self.controls, "revision": self.revision,
-                               "thinking_level": self.thinking_level}}
+                               "thinking_level": self.thinking_level, "message_budget": self.message_budget}}
         if self.output:
             temporary = self.output / "state.json.tmp"
             with temporary.open("w", encoding="utf-8") as stream:
@@ -71,7 +112,14 @@ class LiveLab(Lab):
             for country in result["countries"]:
                 if scope == "researcher" or (member and member["delegation"] == country["id"]):
                     country["live"] = dict(self.controls[country["id"]])
+                    country["live"]["can_finish"] = self._can_finish(country["id"])
             return result
+
+    def _can_finish(self, region):
+        speakers = {e.actor for e in self.events if e.kind == "internal_speech"
+                    and e.round == 1 and e.owners == [region]}
+        return self.controls[region]["phase"] == "discussion" and all(
+            member.name in speakers for member in self.sim.teams[region])
 
     def act(self, action):
         with self.condition:
@@ -84,18 +132,28 @@ class LiveLab(Lab):
                 raise ValueError("Unknown country")
             control = self.controls[region]
             operation = action.get("operation")
+            if control["phase"] == "completed":
+                raise ValueError("This meeting has concluded; its summaries and action plan are final")
             if operation == "start":
                 if not control["active"]:
                     control.update(active=True, remaining=self.message_budget, error=None)
                     control["status"] = "thinking" if control["thinking_agent"] else "queued"
             elif operation == "pause":
                 control.update(active=False, status="pausing" if control["thinking_agent"] else "paused")
+            elif operation == "finish":
+                if not self._can_finish(region):
+                    raise ValueError("Every member must contribute before asking the head to conclude")
+                if not control["finish_requested"]:
+                    control.update(finish_requested=True, finish_resume=control["active"], active=True,
+                                   remaining=max(1, control["remaining"]), error=None)
+                    if not control["thinking_agent"]:
+                        control["status"] = "queued"
             else:
-                raise ValueError("Use start or pause for live conversations")
+                raise ValueError("Use start, pause or finish for live conversations")
             self.revision += 1
             self._checkpoint()
             self.condition.notify_all()
-            return dict(control)
+            return {**control, "can_finish": self._can_finish(region)}
 
     def _next(self):
         regions = list(self.controls)
@@ -106,9 +164,15 @@ class LiveLab(Lab):
             if control["active"]:
                 self._region_cursor = (index + 1) % len(regions)
                 team = self.sim.teams[region]
-                unprepared = next((m for m in team if m.name not in self.prepared), None)
-                member = unprepared or team[self.cursor[region] % len(team)]
-                stage = "prepare" if unprepared else "internal"
+                if control["phase"] == "summaries":
+                    member = next(m for m in team if m.name not in self.summarized[region])
+                    stage = "summary"
+                elif control["phase"] == "plan":
+                    member, stage = team[0], "plan"
+                else:
+                    unprepared = next((m for m in team if m.name not in self.prepared), None)
+                    member = unprepared or (team[0] if control["finish_requested"] else team[self.cursor[region] % len(team)])
+                    stage = "prepare" if unprepared else "internal"
                 control.update(status="thinking", thinking_agent=member.name, stage=stage)
                 self.revision += 1
                 return region, member, stage
@@ -130,6 +194,9 @@ class LiveLab(Lab):
                                discussion=[e for e in context["events"] if e["kind"] == "internal_speech"],
                                discussion_revision=self.controls[region]["messages"],
                                team_members=[{"id": m.name, "role": m.role.value} for m in self.sim.teams[region]])
+                requested_finish = stage == "internal" and member == self.sim.teams[region][0] and self.controls[region]["finish_requested"]
+                context.update(can_finish_discussion=self._can_finish(region), finish_requested=requested_finish,
+                               agent_summaries=[e for e in context["events"] if e["kind"] == "round_summary"])
 
             def resolve(actions):
                 with self.condition:
@@ -138,9 +205,18 @@ class LiveLab(Lab):
                         raise ValueError("Empty discussion message")
                     if stage == "prepare":
                         payload = action.model_dump(mode="json")
+                        kind = "individual_preparation"
+                    elif stage == "internal":
+                        payload = {"speech": action.speech, "commitment": action.commitment.model_dump(mode="json"),
+                                   "requested_finish": requested_finish}
+                        kind = "internal_speech"
+                    elif stage == "summary":
+                        payload = {"summary": action.round_summary.model_dump(mode="json")}
+                        kind = "round_summary"
                     else:
-                        payload = {"speech": action.speech, "commitment": action.commitment.model_dump(mode="json")}
-                    event = self.sim.store.append("individual_preparation" if stage == "prepare" else "internal_speech",
+                        payload = {"assignments": [task.model_dump(mode="json") for task in action.action_plan], "next_round": 2}
+                        kind = "next_round_plan"
+                    event = self.sim.store.append(kind,
                         payload, round=1, visibility="individual" if stage == "prepare" else "delegation",
                         owners=[member.name] if stage == "prepare" else [region], actor=member.name)
                     trace = member.action_traces[-1]
@@ -149,12 +225,29 @@ class LiveLab(Lab):
                                           owners=[member.name], actor=member.name)
                     if stage == "prepare":
                         self.prepared.add(member.name)
+                    elif stage == "summary":
+                        self.summarized[region].add(member.name)
+                        if len(self.summarized[region]) == len(self.sim.teams[region]):
+                            self.controls[region]["phase"] = "plan"
+                    elif stage == "plan":
+                        self.controls[region].update(active=False, phase="completed", status="completed")
+                        self.sim.store.append("discussion_closed", {"summaries": len(self.summarized[region]), "next_round": 2},
+                            round=1, visibility="delegation", owners=[region], actor=member.name)
                     else:
-                        self.cursor[region] += 1
+                        if not requested_finish:
+                            self.cursor[region] += 1
                         self.controls[region]["messages"] += 1
                         self.controls[region]["remaining"] -= 1
-                        if self.controls[region]["remaining"] <= 0:
+                        if action.finish_discussion:
+                            self.controls[region].update(phase="summaries", finish_requested=False, finish_resume=False)
+                            self.sim.store.append("discussion_ended", {"reason": action.finish_reason},
+                                round=1, visibility="delegation", owners=[region], actor=member.name)
+                        elif self.controls[region]["remaining"] <= 0:
                             self.controls[region].update(active=False, status="limited")
+                        elif requested_finish and not self.controls[region]["finish_resume"]:
+                            self.controls[region].update(active=False, status="paused")
+                        if requested_finish:
+                            self.controls[region].update(finish_requested=False, finish_resume=False)
                     self.revision += 1
                     self._checkpoint()
 
@@ -164,7 +257,7 @@ class LiveLab(Lab):
             except Exception as error:
                 with self.condition:
                     self.controls[region].update(active=False, status="error",
-                        error="Agent call failed. Inspect the call record, then Continue to retry.")
+                        error="Agent call failed. Continue to retry the current step.")
                     self.sim.store.append("agent_call_failed", {"stage": stage, "error_type": type(error).__name__,
                         "generation": getattr(member.backend, "last_generation", None)},
                         round=1, visibility="individual", owners=[member.name], actor=member.name)
@@ -174,7 +267,7 @@ class LiveLab(Lab):
                     control.update(thinking_agent=None, stage=None)
                     if control["active"]:
                         control["status"] = "queued"
-                    elif control["status"] not in {"error", "limited"}:
+                    elif control["status"] not in {"error", "limited", "completed"}:
                         control["status"] = "paused"
                     self.revision += 1
                     self._checkpoint()

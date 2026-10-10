@@ -1,7 +1,7 @@
 # Round 1 conversations
 
 The frontend has three steps: choose a country, read its Round 1 discussion,
-and select an agent to inspect its own recorded perspective. There are no sidebars,
+and select an agent to read its thinking traces grouped by round. There are no sidebars,
 meeting controls, round switches, mandate dashboards or climate charts.
 
 ## Open a session
@@ -30,7 +30,9 @@ scripted policies. Only Round 1 runs in live mode.
 Live events, traces, failures and an atomic state checkpoint are saved under
 `runs/round-one-live-*/` with private file permissions. These can later be opened
 as a recorded session with `--run`; restarting the server creates a new live
-session, while Start/Continue resumes within the running session.
+session. `--resume-live runs/round-one-live-...` restores an existing session with
+its conversations, preferences, traces and closing progress. Countries start
+paused; completed meetings remain complete.
 
 For an existing saved simulation:
 
@@ -48,32 +50,43 @@ To generate Gemini agent data, export `GEMINI_API_KEY` and add `--backend gemini
 to the simulation command. The default model is `gemini-3.8-flash`; `--model`
 and `--agent-models` override it. Scripted runs are labelled in the viewer.
 
+## Concluding Round 1
+
+During discussion, the head negotiator pushes for concrete follow-up work. Once
+all members have contributed, the head may set `finish_discussion` and a reason
+when the discussion is sufficiently resolved. **Ask head to conclude** requests
+a fresh head assessment; the head can continue discussion if more work is needed.
+Only the head can conclude, and no member can close before everyone contributes.
+
+A conclusion ends discussion and starts one fresh `summary` call for every agent,
+then a final `plan` call for the head. Summaries state conclusions, agreements,
+unresolved issues and responsibilities. The head reads all summaries and assigns
+every team member a task, deliverable and `target_round: 2`. Plan validation rejects
+foreign assignees, missing team members and assignments targeting a different
+round. These are planned tasks; they have not yet been performed.
+
+Summaries and the action plan appear below the conversation. Closing calls do not
+consume the discussion message budget. Pause also works during closing; Continue
+retries a failed closing step without repeating completed summaries. The meeting
+becomes complete only after all summaries and the action plan exist.
+
 ## What the viewer shows
 
-- Country cards use the actual run roster, including non-default team sizes.
-- The discussion comes directly from Round 1 `internal_speech` events in order.
-- Agent details show that member's private preparation and starting proposal.
-- Clicking a message's speaker highlights the exact decision record behind it.
-  Agent buttons show that member's whole Round 1 record.
-- Decision records show summaries, intended actions, cited evidence, authorized
-  observations, preference changes and resulting commitments. Decision type and
-  confidence are self-reported by the agent when provided.
-- Gemini records include the requested thinking level, model/version, attempt
-  count, latency, reported input/output/thinking/total tokens, exact model inputs
-  and outputs, and provider thought summaries when returned. Thought summaries
-  are distinct from the agent's decision summary. Missing summaries and missing
-  usage remain explicit; thought signatures are never displayed or saved.
-  PDF attachment records identify the exact briefing by file name, hash and Files API URI.
-- Failed calls pause that country, create a private failure record, and produce
-  no discussion message. Continue retries from the same speaker.
-- Older runs without `agent_trace` events show their preparation notes and
-  explicitly identify the missing decision records.
+- Country cards use the actual roster, including eight-country worlds.
+- Discussion messages appear continuously as agent calls complete.
+- Agent panels show only thinking traces, grouped by round. The latest trace opens
+  by default; clicking a message opens its exact trace. Provider thought summaries
+  appear when returned, with recorded decision summaries as an explicitly labelled
+  fallback. Scripted policy summaries remain labelled.
+- Preparation notes, token counters, prompt dumps, proposal metrics and repeated
+  evidence panels are absent from the agent panel. The full audit remains saved.
+- End-of-round summaries and the head's assignments belong to the country view.
 
-The new API endpoints `/api/round-one` and `/api/round-one/agent` return only
-Round 1 data. They retain the existing server-side perspective filtering.
-The frontend uses the local researcher's perspective to inspect each member.
-The server binds to loopback; this is a local operator's research viewer, not an
-authenticated multi-user service. Saved private run archives remain Git-ignored.
+`/api/round-one` exposes Round 1 discussion and closing results. The agent endpoint
+with `view=thinking` returns only the round-grouped trace projection. Both enforce
+existing researcher/member scopes. Public and foreign viewers cannot access
+private delegation discussions, summaries, assignments or individual traces.
+The server binds to loopback and is a local researcher's viewer.
 
 ## Backend meetings
 
@@ -113,15 +126,13 @@ the JSON from `data/climate/brief_specs.json` and `observer_specs.json`.
 
 ## Verify
 
+Following the repository hackathon guidance, run the code instead of adding tests:
+
 ```bash
-uv run pytest -q
+uv run python -m climate_sim --backend offline --world eight --observers --output runs/check-new-run
 node --check frontend/app.js
-node tests/test_agent_lab_ui.cjs
 ```
 
-The interaction test uses an actual saved simulation with five agents per country.
-It checks country navigation, dialogue, agent details, stale responses, escaped
-model output and loading failures. Browser visual verification is a separate check.
-Live tests check fresh contexts, exact message/trace links, pause during a blocked
-call, duplicate starts, continuation, country isolation, private archives, failure
-handling and real SDK serialization of thinking configuration and metadata.
+Also exercise a live country through discussion, head closure, every member's
+summary and the next-round action plan. Check Pause/Continue during closing and
+restoration of a saved session. Browser visual verification is separate.

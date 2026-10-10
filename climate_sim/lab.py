@@ -121,7 +121,8 @@ class Lab:
         if scope not in {"researcher", "public"} and viewer is None:
             raise PermissionError("Unknown viewer")
         # The continuous board does not need a full multi-round metrics/trace replay.
-        visible = [e for e in self.events if e.round == 1 and e.kind == "internal_speech"
+        visible = [e for e in self.events if e.round == 1 and e.kind in {
+                   "internal_speech", "round_summary", "next_round_plan", "discussion_ended", "discussion_closed"}
                    and (scope == "researcher" or (e.visible_to(scope, viewer["delegation"])
                         if viewer else e.visibility == "public"))]
         trace_ids = {resolved: event.id for event in self.events
@@ -138,12 +139,17 @@ class Lab:
                 if scope == "researcher" or scope == key:
                     item.update(private_strategy=agent["private_strategy"], initial_preference=agent["initial_preference"])
                 members.append(item)
-            discussion = [e.model_dump(mode="json") for e in visible if e.owners == [region]]
+            team_events = [e for e in visible if e.owners == [region]]
+            discussion = [e.model_dump(mode="json") for e in team_events if e.kind == "internal_speech"]
             for message in discussion:
                 if message["id"] in trace_ids:
                     message["trace_id"] = trace_ids[message["id"]]
             countries.append({"id": region, "name": brief.title,
-                              "members": members, "discussion": discussion})
+                              "members": members, "discussion": discussion,
+                              "summaries": [e.model_dump(mode="json") for e in team_events if e.kind == "round_summary"],
+                              "action_plan": next((e.payload for e in reversed(team_events) if e.kind == "next_round_plan"), None),
+                              "ending": next((e.payload for e in reversed(team_events) if e.kind == "discussion_ended"), None),
+                              "completed": any(e.kind == "discussion_closed" for e in team_events)})
         return {"round": 1, "run": self.run_name, "backend": self.state["config"]["backend"],
                 "mode": "recorded", "countries": countries}
 
@@ -155,12 +161,23 @@ class Lab:
             raise PermissionError("Unknown agent")
         traces = [self.trace(e.id, scope) for e in self.events
                   if e.kind == "agent_trace" and e.round == 1 and e.actor == agent_id
-                  and e.payload.get("stage") in {"prepare", "internal", "mandate", "vote", "announce"}
+                  and e.payload.get("stage") in {"prepare", "internal", "mandate", "vote", "announce", "summary", "plan"}
                   and (scope == "researcher" or scope == agent_id)]
         failures = [e.model_dump(mode="json") for e in self.events
                     if e.kind == "agent_call_failed" and e.round == 1 and e.actor == agent_id
                     and scope in {"researcher", agent_id}]
-        return {"round": 1, "agent": agent, "traces": traces, "failures": failures}
+        thinking = []
+        for event in traces:
+            payload = event["payload"]
+            calls = payload.get("generation", {}).get("calls", [])
+            accepted = next((call for call in reversed(calls) if call.get("accepted")), {})
+            thoughts = accepted.get("thought_summaries", [])
+            summary = payload.get("decision_summary") or {}
+            thinking.append({"id": event["id"], "stage": payload["stage"],
+                "thoughts": thoughts or ([summary["summary"]] if summary.get("summary") else []),
+                "source": "provider_summary" if thoughts else payload.get("summary_source", "not_recorded")})
+        return {"round": 1, "agent": agent, "traces": traces, "failures": failures,
+                "thinking_rounds": [{"round": 1, "traces": thinking}]}
 
     def trace(self, event_id: str, scope: str) -> dict:
         member = self.state["agents"].get(scope)
@@ -250,7 +267,10 @@ def server_for(lab: Lab, port: int) -> ThreadingHTTPServer:
                         return self.send_json(200, lab.round_one(scope))
                     if parsed.path == "/api/round-one/agent":
                         agent_id = parse_qs(parsed.query).get("agent", [""])[0]
-                        return self.send_json(200, lab.round_one_agent(agent_id, scope))
+                        data = lab.round_one_agent(agent_id, scope)
+                        if parse_qs(parsed.query).get("view") == ["thinking"]:
+                            data = {"round": data["round"], "thinking_rounds": data["thinking_rounds"]}
+                        return self.send_json(200, data)
                     if parsed.path == "/api/trace":
                         event_id = parse_qs(parsed.query).get("id", [""])[0]
                         return self.send_json(200, lab.trace(event_id, scope))
@@ -304,6 +324,7 @@ def main():
     parser.add_argument("--run", type=Path, default=ROOT / "runs/climate-mvp-seed42")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--live", action="store_true", help="Create a live Round 1 session; calls begin when Start is pressed")
+    parser.add_argument("--resume-live", type=Path, help="Restore a saved live Round 1 session, with all countries paused")
     parser.add_argument("--backend", choices=("gemini", "offline"), default="gemini")
     parser.add_argument("--model", default="gemini-3.8-flash")
     parser.add_argument("--thinking-level", choices=("low", "medium", "high"), default="medium")
@@ -312,13 +333,16 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--message-budget", type=int, default=12, help="Messages per country before pausing; Continue renews the budget")
     args = parser.parse_args()
+    if args.resume_live:
+        args.live = True
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%fZ")
     if args.live:
         from .live import LiveLab
         from .models import SimulationConfig
         lab = LiveLab(SimulationConfig(seed=args.seed, team_size=args.team_size, backend=args.backend,
                                       default_model=args.model, world=args.world), thinking_level=args.thinking_level,
-                      message_budget=args.message_budget, output=ROOT / "runs" / f"round-one-live-{stamp}")
+                      message_budget=args.message_budget, resume=args.resume_live,
+                      output=None if args.resume_live else ROOT / "runs" / f"round-one-live-{stamp}")
     else:
         lab = Lab(args.run, output=ROOT / "runs" / f"meeting-lab-{stamp}")
     server = server_for(lab, args.port)

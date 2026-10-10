@@ -4,9 +4,8 @@
 
 The frontend shows Round 1: choose a country and start its continuous delegation
 conversation. Every contribution makes a fresh Gemini call with the updated
-country transcript. Select a speaker to inspect that message's decision record,
-thinking level, token usage, provider thought summary when returned, and exact
-call input/output. Country cards show the actual agent count.
+country transcript. Select a speaker to read its thinking traces grouped by round.
+Country cards show the actual agent count.
 
 ```bash
 uv sync
@@ -19,6 +18,13 @@ response finishes. Each start permits 12 new messages; Continue renews the
 budget and keeps the same conversation and speaker order. The default model is
 `gemini-3.8-flash` with medium thinking. Opening the viewer makes no calls.
 `--backend offline` runs the same live loop with clearly labelled scripted agents.
+
+The head negotiator can conclude once every agent has contributed. You can also
+press **Ask head to conclude** to request that decision. Every agent then writes
+an end-of-round summary, and the head assigns concrete tasks and deliverables to
+every member for Round 2. These appear below the discussion. Completed meetings
+stay closed. `--resume-live runs/round-one-live-...` restores an existing session
+with its conversations and closing progress, initially paused.
 
 Saved simulations can also be viewed:
 

@@ -13,7 +13,7 @@ from concordia.typing import entity
 from pydantic import ValidationError
 
 from .briefs import SOURCES
-from .models import Brief, ClimateCommitment, COMMITMENT_FIELDS, DelegationId, DecisionSummary, MeetingAction, MemberAction, MeetingInvitation, MeetingMessage, MeetingReport, ObserverBrief, ObserverId, Role, SimulationConfig, TeamMandate, NegotiationOffer, WORLDS
+from .models import Brief, ClimateCommitment, COMMITMENT_FIELDS, DelegationId, DecisionSummary, MeetingAction, MemberAction, MeetingInvitation, MeetingMessage, MeetingReport, ObserverBrief, ObserverId, Role, RoundAssignment, RoundSummary, SimulationConfig, TeamMandate, NegotiationOffer, WORLDS
 
 
 ROLE_PRIORITIES = {
@@ -125,6 +125,28 @@ class DelegationMember(entity.Entity):
 
     def validate_action(self, action: MemberAction, context: dict) -> None:
         stage = context["stage"]
+        if action.finish_discussion or action.finish_reason:
+            if not (action.finish_discussion and action.finish_reason and self.role == Role.HEAD
+                    and stage == "internal" and context.get("continuous_discussion")
+                    and context.get("can_finish_discussion")):
+                raise ValueError("Only the head can close a live discussion, with a reason, after every member contributes")
+        if action.round_summary is not None and stage != "summary":
+            raise ValueError("Round summaries are allowed only during the closing summary stage")
+        if stage in {"summary", "plan"}:
+            if not context.get("continuous_discussion") or self.role == Role.OBSERVER:
+                raise ValueError("Only delegation members can conclude a live round")
+            if action.commitment or action.mandate or action.ranked_candidates or action.approved_candidates:
+                raise ValueError("Closing summaries and plans do not pledge, propose mandates or vote")
+        if stage == "summary" and action.round_summary is None:
+            raise ValueError("Every agent must provide a round_summary")
+        if action.action_plan or stage == "plan":
+            if stage != "plan" or self.role != Role.HEAD or not action.action_plan:
+                raise ValueError("Only the head creates the next-round action plan, during plan")
+            roster = {m["id"] for m in context.get("team_members", [])}
+            if {task.agent_id for task in action.action_plan} != roster:
+                raise ValueError("The action plan must assign work to every member of this team and nobody else")
+            if any(task.target_round != context["round"] + 1 for task in action.action_plan):
+                raise ValueError("Every task must target the next round")
         if action.decision_summary:
             allowed = {e["id"] for e in context.get("events", [])}
             if set(action.decision_summary.evidence_event_ids) - allowed:
@@ -235,6 +257,8 @@ class OfflineBackend:
         descriptions = {
             "prepare": ("Apply my role priorities to the delegation's experimental baseline.", "Prepare my preferred proposal"),
             "internal": ("Balance my role priorities with the team's shared proposals and observed climate result.", "Share my revised preference with the team"),
+            "summary": ("Summarize the team's actual discussion and my remaining work.", "Write my end-of-round summary"),
+            "plan": ("Assign follow-up work using each member's summary and role.", "Publish the next-round action plan"),
             "mandate": ("Combine the shared member proposals using the configured delegation decision rule.", "Propose a national mandate"),
             "vote": ("Rank shared candidates by their policy distance from my preference.", "Submit my individual ballot"),
             "announce": ("Use the approved national mandate for the initial public commitment.", "Announce the team's position"),
@@ -253,11 +277,33 @@ class OfflineBackend:
             else: intended = "Wait; no eligible meeting action is available"
         action.decision_summary = DecisionSummary(summary=summary, intended_action=intended,
             evidence_event_ids=[e["id"] for e in context.get("events", [])[-3:]])
+        if stage == "internal" and context.get("continuous_discussion") and member.role == Role.HEAD:
+            if context.get("can_finish_discussion") and (context.get("finish_requested") or
+                    len(context["discussion"]) >= 2 * len(context["team_members"])):
+                action.finish_discussion = True
+                action.finish_reason = "Every member has contributed; record our positions and assign the remaining work for the next round."
+                action.speech += " We will now conclude this discussion, summarize our positions and assign work for Round 2."
         return action
 
     def _decide(self, member: DelegationMember, context: dict[str, Any]) -> MemberAction:
         stage, round_number = context["stage"], context["round"]
         role, brief = member.priority_role, member.brief
+        if stage == "summary":
+            own_messages = [e for e in context["discussion"] if e["actor"] == member.name]
+            latest = own_messages[-1]["payload"]["speech"] if own_messages else "I had no discussion contribution."
+            return MemberAction(round_summary=RoundSummary(
+                summary=f"My contribution to this round: {latest}",
+                agreements=["The team's current proposals are recorded in the discussion."],
+                unresolved_issues=["Assess feasibility and reciprocal international commitments before the next round."],
+                responsibilities=[f"Prepare follow-up work on {member.personality}"]))
+        if stage == "plan":
+            tasks = {
+                Role.HEAD.value: ("Coordinate negotiating priorities and approach potential coalition partners.", "A negotiating agenda with counterparties, concessions and red lines."),
+                Role.ECONOMIC.value: ("Assess transition costs and the financing required for the team's proposals.", "A cost and finance proposal with assumptions and funding gaps."),
+                Role.CLIMATE.value: ("Assess the emissions and forestry proposals and identify feasible improvements.", "An emissions and forestry assessment with risks and recommended targets."),
+            }
+            return MemberAction(action_plan=[RoundAssignment(agent_id=m["id"], task=tasks[m["role"]][0],
+                deliverable=tasks[m["role"]][1], target_round=round_number + 1) for m in context["team_members"]])
         if stage == "press":
             warming = context.get("latest_outcome", {}).get("warming_celsius")
             outlook = f" The mock evaluator now shows {warming:.2f} °C." if warming is not None else ""
@@ -541,13 +587,30 @@ class GeminiBackend:
             system += (
                 " CURRENT STAGE: individual preparation. Return commitment, private_strategy and decision_summary. "
                 "Set all meeting/offer/vote fields to their empty defaults and mandate to null. "
+                "finish_discussion must be false, finish_reason and round_summary null, and action_plan empty. "
                 "You cannot request meetings or take any discussion action during preparation."
             )
         elif context["stage"] == "internal":
             system += (
                 " CURRENT STAGE: own delegation discussion. Return speech, commitment and decision_summary. "
                 "private_strategy and mandate must be null; all meeting/offer/vote fields must be empty. "
+                "round_summary must be null and action_plan empty; only the head can set finish_discussion. "
                 "You cannot perform meetings, international offers or votes during this stage."
+            )
+        elif context["stage"] == "summary":
+            system += (
+                " CURRENT STAGE: end-of-round summary. Return round_summary and decision_summary. "
+                "In round_summary, concisely state your own conclusion, agreements, unresolved_issues and responsibilities. "
+                "Use the actual discussion; distinguish proposals from agreements. Do not expose private preparation. "
+                "All unrelated fields must be null or empty, and finish_discussion must be false."
+            )
+        elif context["stage"] == "plan":
+            system += (
+                " CURRENT STAGE: head negotiator's next-round action plan. Read all agent summaries below. "
+                "Return action_plan and decision_summary. Assign at least one concrete task and deliverable to EVERY "
+                "team_members ID, including yourself, using their roles, concerns and unresolved issues. "
+                "Each target_round must equal the current round plus one. Say who should do what and produce what. "
+                "All unrelated fields must be null or empty, and finish_discussion must be false."
             )
         packet = {"name": member.name, "role": member.role.value, "personality": member.personality,
                   "brief": member.brief.model_dump(mode="json"), "own_preference": member.preferred.model_dump(mode="json") if member.preferred else None,
@@ -558,10 +621,21 @@ class GeminiBackend:
                 " This is a continuous conversation, not a sequence of opening statements. "
                 "During internal, respond directly to the latest message: ask a useful question, challenge an assumption, "
                 "add an insight, propose a tradeoff or revise your position. Avoid repeating your role or numerical checklist. "
-                "Use a short natural contribution and include a current structured commitment. "
+                "During internal use a short natural contribution and include a current structured commitment. "
                 "Include decision_type and confidence (your self-reported confidence, not a measured probability) "
                 "in decision_summary. A decision summary is required."
             )
+            if member.role == Role.HEAD and context["stage"] == "internal":
+                system += (
+                    " As head negotiator, actively drive agreement and concrete next-round work: ask members what they "
+                    "will investigate, who will coordinate with whom, and what deliverables they can prepare. "
+                    "When can_finish_discussion is true and the discussion is sufficiently resolved, you may set "
+                    "finish_discussion=true and give a finish_reason with a short closing speech. "
+                    "Unresolved issues can be carried forward as explicit tasks; do not fabricate agreement. "
+                    "If finish_requested is true, assess whether to conclude now or explain what still needs discussion. "
+                    "Otherwise leave finish_discussion=false and finish_reason=null. Final summaries and the action plan "
+                    "will be generated in separate closing calls after your decision."
+                )
         self.last_generation = {"model": self.model, "thinking_level": getattr(self, "thinking_level", None),
                                 "thought_summaries_requested": getattr(self, "include_thoughts", False),
                                 "system_instruction": system, "calls": []}

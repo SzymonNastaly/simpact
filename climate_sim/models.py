@@ -268,6 +268,20 @@ class MeetingAction(Model):
     text: str = Field(default="", max_length=4000)
 
 
+class RoundSummary(Model):
+    summary: str = Field(min_length=1, max_length=1800)
+    agreements: list[str] = Field(default_factory=list, max_length=8)
+    unresolved_issues: list[str] = Field(default_factory=list, max_length=8)
+    responsibilities: list[str] = Field(default_factory=list, max_length=8)
+
+
+class RoundAssignment(Model):
+    agent_id: str
+    task: str = Field(min_length=1, max_length=1000)
+    deliverable: str = Field(min_length=1, max_length=600)
+    target_round: int = Field(ge=2, le=11)
+
+
 class MemberAction(Model):
     speech: str = Field(default="", max_length=5000)
     private_strategy: str | None = Field(default=None, max_length=5000)
@@ -278,6 +292,10 @@ class MemberAction(Model):
     ranked_candidates: list[str] = Field(default_factory=list)
     approved_candidates: list[str] = Field(default_factory=list)
     decision_summary: DecisionSummary | None = None
+    finish_discussion: bool = False
+    finish_reason: str | None = Field(default=None, min_length=1, max_length=1000)
+    round_summary: RoundSummary | None = None
+    action_plan: list[RoundAssignment] = Field(default_factory=list, max_length=24)
     meeting_requests: list[MeetingInvitation] = Field(default_factory=list, max_length=1)
     meeting_acknowledgements: dict[str, Literal["accept", "decline"]] = Field(default_factory=dict)
     meeting_messages: list[MeetingMessage] = Field(default_factory=list, max_length=2)
