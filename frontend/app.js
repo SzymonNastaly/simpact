@@ -18,6 +18,16 @@
   let bilaterals = null;
   let bilateralView = false;
   let selectedMeeting = null;
+  let networkSlot = 'all';
+  const chartSignatures = {};
+  const chartNames = {roleName: agent => roleName(agent), fullName: id => fullName(id)};
+  // Charts redraw only when their data changes, so hover and focus survive live polling.
+  function chart(id, data, draw) {
+    const signature = JSON.stringify([data, $(id).clientWidth]);
+    if (chartSignatures[id] === signature) return;
+    chartSignatures[id] = signature;
+    draw($(id));
+  }
 
   const roleName = agent => {
     const name = roles[agent.role] || agent.role;
@@ -65,6 +75,7 @@
     renderRoundControl();
     const total = session.countries.reduce((sum, country) => sum + country.members.length, 0);
     $('roster-total').textContent = `${session.countries.length} delegations · ${total} agents`;
+    chart('positions-chart', session.countries.map(country => [country.members, country.discussion.length]), el => window.SimpactViz.positions(el, session.countries, chartNames));
     $('run-caption').textContent = `${session.mode === 'live' ? (session.backend === 'offline' ? 'Live scripted session' : 'Live Gemini conversation') : (session.backend === 'offline' ? 'Recorded scripted session' : 'Recorded Gemini session')} · ${session.run}`;
   }
 
@@ -78,6 +89,7 @@
     $('country-description').textContent = `${country.members.length} agents in this delegation. Select an agent to read its thinking traces.`;
     $('agents').innerHTML = country.members.map(agent => `<button type="button" class="agent-button" data-agent="${esc(agent.agent)}" aria-label="Inspect ${esc(roleName(agent))}">${avatar(agent)}<span><strong>${esc(roleName(agent))}</strong><small>View thinking traces</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`).join('');
     renderDiscussion(country);
+    renderMovement(country);
     renderResults(country);
     renderLive(country);
     $('country-title').focus();
@@ -222,6 +234,17 @@
   const person = id => { const agent = agentById(id); return `${agent ? avatar(agent) : ''}<span class="person-name"><strong>${esc(agent && agent.role !== 'observer' ? groupName(agent) : fullName(id))}</strong><small>${esc(agent ? roleName(agent) : '')}</small></span>`; };
   const meetingState = meeting => meeting.status === 'active' ? 'Talking' : meeting.close_reason === 'limit' ? 'Message limit' : meeting.messages.length <= 1 && meeting.closed_by === meeting.partner ? 'Declined' : 'Ended';
 
+  function renderMovement(country) {
+    chart('movement-chart', [country.id, country.discussion.length], el => window.SimpactViz.movement(el, country, chartNames));
+  }
+
+  function renderNetwork() {
+    chart('bilateral-network', [meetingsOf().map(m => [m.id, m.messages.length, m.status]), networkSlot, selectedMeeting], el => window.SimpactViz.network(el, bilaterals, chartNames, {
+      slot: networkSlot, selected: selectedMeeting,
+      onSelect: id => { selectedMeeting = id; renderBilaterals(); $('bilateral-conversation').scrollIntoView({block:'nearest'}); },
+      onSlot: slot => { networkSlot = slot; renderNetwork(); }}));
+  }
+
   function renderBilaterals() {
     renderBilateralControls();
     const meetings = meetingsOf();
@@ -232,6 +255,7 @@
       ${queue.some(item => item.state === 'finished') ? `<details><summary>Finished agents</summary>${queue.filter(item => item.state === 'finished').map(agentRow).join('')}</details>` : ''}
       <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`;
     renderMeeting();
+    renderNetwork();
   }
 
   function renderBilateralControls() {
@@ -320,7 +344,7 @@
       if (bilateralView && changed && selectedAgent) await openAgent(selectedAgent,agentTrigger,selectedTrace,true);
       if (selectedCountry) {
         const country = countryById(selectedCountry);
-        if (country.discussion.length !== previous?.discussion.length) renderDiscussion(country);
+        if (country.discussion.length !== previous?.discussion.length) { renderDiscussion(country); renderMovement(country); }
         renderLive(country);
         if (JSON.stringify([country.summaries,country.action_plan,country.ending]) !== JSON.stringify([previous?.summaries,previous?.action_plan,previous?.ending])) renderResults(country);
         if (selectedAgent) await openAgent(selectedAgent,agentTrigger,selectedTrace,true);
