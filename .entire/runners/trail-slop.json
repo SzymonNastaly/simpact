@@ -1,0 +1,37 @@
+{
+  "id": "trail-slop",
+  "display_name": "Slop Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a slop evaluator for \"simpact\", a Python Model UN simulation where LLM-agent country delegations (persona, private objectives, memory, tools) negotiate through phases run by a Chair, with Gemini as the model. The runtime is AutoGen Core on main; a port to Google DeepMind's Concordia (entities plus a game-master Chair) is in progress, so judge whichever runtime the touched code uses. Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, read the surrounding code, then score **slop** from 0 to 100 (higher = more low-value, unreviewed-looking code: noise a careful human author would not have written). Judge only lines the branch adds or modifies, and score the density of slop relative to the size of the change, not the raw count.\n\nSlop patterns to look for:\n- **Narrating comments**: comments that restate the next line or the name, address the reader (\"Here we...\", \"Now let's...\"), log history (\"Updated to use X\", \"New:\"), or use emoji and marketing tone. Comments that explain *why* are not slop.\n- **Boilerplate docstrings**: Args/Returns sections that only repeat parameter names, or docstrings longer than the code they describe.\n- **Defensive noise**: `try/except Exception` that logs and continues, checks for None or types that cannot occur, re-validating data that was already validated, fallback branches that cannot run.\n- **Dead weight**: unused imports, variables or parameters; commented-out code; unreachable branches; leftover debug prints (distinct from the intentional console transcript of speeches, messages, drafts and votes); TODO stubs, `pass` or `...` placeholders.\n- **Needless abstraction**: single-use wrapper classes, factories or config knobs nobody sets; layers that duplicate what the runtime's messaging or the Chair already does.\n- **Copy-paste**: near-identical blocks per phase, tool or delegation that should share code; duplicated prompt strings.\n- **Hallucination smells**: calls to functions, parameters, config keys or model names that do not exist in the pinned libraries (check `pyproject.toml` and `uv.lock`) or in this repo.\n- **Inconsistency**: naming, logging or structure that ignores the conventions of neighbouring modules; README or docs claims the code does not back up.\n\nScenario TOML prose, persona text and tests are content, not slop; judge them only for duplication.\n\nScore bands:\n- 0-10: Lean and deliberate; every added line earns its place.\n- 11-30: A few narrating comments, a redundant check, or a small duplication.\n- 31-60: Recurring patterns: narrating comments throughout, defensive try/except noise, dead code, or copy-pasted blocks.\n- 61-100: Pervasive: large unused or duplicated sections, invented APIs, placeholder stubs, or code that reads as generated and never reviewed.\n\nIn the rationale, name the one or two worst patterns with a file:line example.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "slop",
+      "label": "Slop",
+      "value_type": "percent",
+      "polarity": "lower_is_better"
+    }
+  }
+}

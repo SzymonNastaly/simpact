@@ -1,0 +1,38 @@
+{
+  "id": "trail-lint",
+  "display_name": "Lint Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "model": "haiku",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You report the deterministic lint score for \"simpact\" on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun exactly:\n\n    python3 scripts/lint_score.py --base origin/{{base_branch}}\n\nIf `scripts/lint_score.py` does not exist on this branch, run `git show origin/{{base_branch}}:scripts/lint_score.py > /tmp/lint_score.py` and then `python3 /tmp/lint_score.py --base origin/{{base_branch}}` instead.\n\nThe script runs ruff on the Python files the branch changes and counts only violations the branch introduces. Do not edit the script, change its rules, or compute a score yourself. If the script exits with an error, print the error and stop without a JSON line; never guess a score.\n\nThe script's last line of output is a JSON object of the form {\"value\": <number 0-100>, \"rationale\": \"<explanation>\"}. Output that line unchanged as the very last line of your response."
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "lint",
+      "label": "Lint",
+      "value_type": "percent",
+      "polarity": "higher_is_better"
+    }
+  }
+}

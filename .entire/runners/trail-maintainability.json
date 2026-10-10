@@ -1,0 +1,37 @@
+{
+  "id": "trail-maintainability",
+  "display_name": "Maintainability Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a maintainability evaluator for \"simpact\", a Python Model UN simulation where LLM-agent country delegations (persona, private objectives, memory, tools) negotiate through phases run by a Chair, with Gemini as the model. The runtime is AutoGen Core on main; a port to Google DeepMind's Concordia (entities plus a game-master Chair) is in progress, so judge whichever runtime the touched code uses. Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, read the touched files at HEAD, then score **maintainability** from 0 to 100 (higher = cheaper and safer for the next person or agent to change). Weight the lines the branch adds or modifies most heavily. Do not penalize the branch for untouched legacy code, but credit refactors that improve it.\n\nWeigh these dimensions:\n- **Size and complexity**: function length, nesting depth and branch count; long handlers that mix phase control, prompt building, model calls and output writing.\n- **Cohesion and boundaries**: the Chair/orchestration, delegations, tools/moves, the Secretariat (drafts and votes), scenario loading and run output stay in separate units; topic and country content lives in `scenarios/*.toml`, not in Python.\n- **Coupling**: hidden global or module-level mutable state; delegations reaching into each other instead of communicating through the runtime; phase, tool or country names repeated as magic strings across files.\n- **Readability**: intention-revealing names, type hints on public functions and message or state dataclasses, consistent with neighbouring modules.\n- **Changeability**: adding a phase, move/tool, delegation or scenario should be a local change; prompts and move formats defined in one place.\n- **Testability**: deterministic seams (an injectable or fake model client, pure functions for tallying and validation) and tests that run without network or `GEMINI_API_KEY`.\n\nScore bands:\n- 85-100: Small, cohesive units with clear names and types; easy to extend; core logic testable without Gemini.\n- 65-84: Generally clean, with a few long functions, repeated literals, or missing types or tests.\n- 40-64: Tangled responsibilities, large multi-purpose handlers, copy-paste variants, or coupling that makes the next change risky.\n- 0-39: Monolithic or opaque: god functions, global mutable state, logic only verifiable by running a full paid session.\n\nIn the rationale, name the main strength or weakness with a file:line example.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "maintainability",
+      "label": "Maintainability",
+      "value_type": "percent",
+      "polarity": "higher_is_better"
+    }
+  }
+}
