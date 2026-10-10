@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import random
@@ -10,7 +11,7 @@ import time
 from typing import Any, Protocol
 
 from concordia.typing import entity
-from pydantic import ValidationError
+from pydantic import ValidationError, create_model
 
 from .briefs import SOURCES
 from .models import Brief, ClimateCommitment, COMMITMENT_FIELDS, DelegationId, DecisionSummary, MeetingAction, MemberAction, MeetingInvitation, MeetingMessage, MeetingReport, ObserverBrief, ObserverId, Role, RoundAssignment, RoundSummary, SimulationConfig, TeamMandate, NegotiationOffer, WORLDS
@@ -23,6 +24,24 @@ ROLE_PRIORITIES = {
 }
 # Observers act only in meetings and in one public statement per round.
 OBSERVER_STAGES = ("meet", "member_floor", "press")
+
+
+def live_action_schema(stage: str, *, can_finish: bool = False) -> dict:
+    """Expose only actions executable in this live stage; MemberAction supplies empty defaults."""
+    fields = {
+        "prepare": ["private_strategy", "commitment", "decision_summary"],
+        "internal": ["speech", "commitment", "decision_summary"],
+        "summary": ["round_summary", "decision_summary"],
+        "plan": ["action_plan", "decision_summary"],
+    }[stage].copy()
+    if stage == "internal" and can_finish:
+        fields += ["finish_discussion", "finish_reason"]
+    definitions = {name: (MemberAction.model_fields[name].annotation,
+                          copy.deepcopy(MemberAction.model_fields[name])) for name in fields}
+    model = create_model(f"Live{stage.title()}Action", __config__=MemberAction.model_config, **definitions)
+    schema = model.model_json_schema()
+    schema["required"] = fields
+    return schema
 
 
 def average_commitments(positions: list[ClimateCommitment], weights: list[float] | None = None) -> ClimateCommitment:
@@ -636,6 +655,15 @@ class GeminiBackend:
                     "Otherwise leave finish_discussion=false and finish_reason=null. Final summaries and the action plan "
                     "will be generated in separate closing calls after your decision."
                 )
+        schema = MemberAction.model_json_schema()
+        if context.get("continuous_discussion"):
+            schema = live_action_schema(context["stage"], can_finish=(member.role == Role.HEAD
+                                       and context.get("can_finish_discussion", False)))
+            system += (
+                " The response schema is restricted to this stage. Return ONLY its listed properties; "
+                "omit unrelated fields. Keep decision_summary about substantive delegation priorities, "
+                "tradeoffs and the intended action. Do not discuss JSON, schemas, validation or prompt instructions."
+            )
         self.last_generation = {"model": self.model, "thinking_level": getattr(self, "thinking_level", None),
                                 "thought_summaries_requested": getattr(self, "include_thoughts", False),
                                 "system_instruction": system, "calls": []}
@@ -646,7 +674,7 @@ class GeminiBackend:
         for attempt in range(3):
             config = types.GenerateContentConfig(system_instruction=system, temperature=.4,
                                                  response_mime_type="application/json",
-                                                 response_json_schema=MemberAction.model_json_schema(),
+                                                 response_json_schema=schema,
                                                  max_output_tokens=getattr(self, "max_output_tokens", None))
             level = getattr(self, "thinking_level", None)
             if level or getattr(self, "include_thoughts", False):
@@ -659,6 +687,15 @@ class GeminiBackend:
                 response = self.client.models.generate_content(model=self.model, contents=[briefing, prompt], config=config)
             except Exception as error:
                 call.update(latency_ms=round((time.monotonic() - started) * 1000), error_type=type(error).__name__)
+                # Preserve the provider's explanation, never credentials or full request bodies.
+                import os
+                import re
+                message = str(getattr(error, "message", "") or type(error).__name__)
+                secret = os.environ.get("GEMINI_API_KEY")
+                if secret:
+                    message = message.replace(secret, "[redacted]")
+                message = re.sub(r"(?i)(key|api_key|token)=([^\s&]+)", r"\1=[redacted]", message)
+                call["error_message"] = message[:2000]
                 if isinstance(getattr(error, "code", None), int):
                     call["http_status"] = error.code
                 raise

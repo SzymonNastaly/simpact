@@ -171,7 +171,7 @@ class Lab:
             payload = event["payload"]
             calls = payload.get("generation", {}).get("calls", [])
             accepted = next((call for call in reversed(calls) if call.get("accepted")), {})
-            thoughts = accepted.get("thought_summaries", [])
+            thoughts = accepted.get("thought_summaries", []) if accepted.get("attempt", 1) == 1 else []
             summary = payload.get("decision_summary") or {}
             thinking.append({"id": event["id"], "stage": payload["stage"],
                 "thoughts": thoughts or ([summary["summary"]] if summary.get("summary") else []),

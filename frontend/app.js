@@ -132,7 +132,7 @@
     const rounds = data.thinking_rounds || [{round:1,traces:(data.traces || []).map(event => {
       const calls = event.payload.generation?.calls || [];
       const call = [...calls].reverse().find(item => item.accepted);
-      const thoughts = call?.thought_summaries || [];
+      const thoughts = call?.attempt > 1 ? [] : call?.thought_summaries || [];
       const summary = event.payload.decision_summary?.summary;
       return {id:event.id,stage:event.payload.stage,thoughts:thoughts.length ? thoughts : summary ? [summary] : [],source:thoughts.length ? 'provider_summary' : event.payload.summary_source};
     })}];
