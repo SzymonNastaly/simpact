@@ -95,6 +95,7 @@ class DelegationMember(entity.Entity):
         self._context: dict[str, Any] = {}
         self._revised_rounds: set[int] = set()
         self.action_traces: list[dict] = []
+        self.last_error: str | None = None
 
     @property
     def name(self) -> str:
@@ -116,12 +117,14 @@ class DelegationMember(entity.Entity):
 
     def act(self, action_spec: entity.ActionSpec = entity.DEFAULT_ACTION_SPEC) -> str:
         before = self.preferred.model_dump(mode="json") if self.preferred else None
+        self.last_error = None
         try:
             action = self.backend.decide(self, self._context)
+            self.validate_action(action, self._context)
         except Exception as error:
-            # Concordia may log actor errors before the CLI can sanitize them.
+            # Kept for failure records; Concordia may log actor errors before the CLI can sanitize them.
+            self.last_error = type(error).__name__
             raise RuntimeError(f"Agent backend failed ({type(error).__name__})") from None
-        self.validate_action(action, self._context)
         self.last_action = action
         if self._context["stage"] == "prepare":
             self.preferred = self.initial_preference = action.commitment

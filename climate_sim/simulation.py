@@ -13,7 +13,7 @@ from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
 from .meetings import MeetingHub, Participant
 from .memory import EventStore, write_json
 from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
-from .scenes import run_scene
+from .scenes import ScheduledGameMaster, run_scene, run_schedule
 from .voting import ranked_choice
 
 
@@ -84,7 +84,9 @@ class Simulation:
                                       for k, b in {**self.briefs, **self.observer_briefs}.items()}},
                           round=0, visibility="public")
 
-    def context(self, member: DelegationMember) -> dict:
+    def context(self, member: DelegationMember, stage: str | None = None) -> dict:
+        # An explicit stage lets concurrent game-master loops build contexts without sharing self.stage.
+        stage = stage or self.stage
         region = member.brief.delegation.value
         events = self.store.view(member.name, region, self.config.memory_length, exclude_kinds={"agent_trace"})
         # Keep full trajectories in the audit log; observations use bounded summaries.
@@ -94,7 +96,7 @@ class Simulation:
         latest = max(self.commitments, default=0)
         offers = [o.model_dump(mode="json") for o in self.offers.values()
                   if o.public or o.sender.value == region or region in {d.value for d in o.recipients}]
-        result = {"stage": self.stage, "round": self.current_round, "events": events,
+        result = {"stage": stage, "round": self.current_round, "events": events,
                   "public_commitments": {k: c.model_dump(mode="json") for k, c in self.commitments.get(latest, {}).items()},
                   "offers": offers, "decision_rule": self.config.decision_rule}
         # Live team proposals are shared institutional state, not hidden individual
@@ -112,9 +114,9 @@ class Simulation:
             result["mandate"] = self.mandates[region].model_dump(mode="json")
         if region in self._candidates:
             result["candidates"] = {k: c.model_dump(mode="json") for k, c in self._candidates[region].items()}
-        if self.bilaterals and self.stage in BILATERAL_STAGES:
+        if self.bilaterals and stage in BILATERAL_STAGES:
             # Live protocol state, like shared_positions: only this member's own meeting.
-            result.update(self.bilaterals.context(member.name, self.stage))
+            result.update(self.bilaterals.context(member.name, stage))
         return result
 
     def _scene(self, stage: str, participants: list[DelegationMember], *, simultaneous=False,
@@ -210,14 +212,15 @@ class Simulation:
         """One-to-one conversations between members (see bilaterals.py), partners chosen by the members."""
         if not self.config.bilateral_slots:
             return
+        self.stage = "bilaterals"
         self.bilaterals = Bilaterals(self.hub, self.store, round_number=self.current_round,
                                      slots=self.config.bilateral_slots, message_limit=self.config.bilateral_messages)
-        while due := self.bilaterals.due():
-            for stage in BILATERAL_STAGES:
-                members = [self.agents[name] for step, name in due if step == stage]
-                if members:
-                    self._scene(stage, members, simultaneous=True,
-                                resolve=lambda actions, stage=stage: self.bilaterals.resolve(stage, actions))
+        self.store.append("scene_started", {"stage": "bilaterals", "participants": list(self.agents),
+                          "engine": "concordia.simultaneous", "game_master": "scheduled"},
+                          round=self.current_round, visibility="individual", owners=["researcher"])
+        game_master = ScheduledGameMaster("UN Secretary-General", self.agents, self.bilaterals,
+                                          store=self.store, context=self.context)
+        run_schedule(game_master, list(self.agents.values()))
         self.bilaterals = None
 
     def _press(self):
