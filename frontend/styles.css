@@ -298,3 +298,43 @@ dialog{overscroll-behavior:contain}
 .md-table table{border-collapse:collapse;font-size:.92em;line-height:1.6}
 .md-table th,.md-table td{text-align:left;vertical-align:top;padding:6px 14px 6px 0;border-bottom:1px solid var(--line)}
 .md-table th{font-weight:600}
+/* Round 2 presence board and live vs earlier conversations. State is always written, never colour alone. */
+:root{--state-talking:#2f8a4c;--state-reporting:#d08a00;--state-planning:#2a78d6;--state-free:#b9bcb2}
+.presence{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:24px 26px;margin:24px 0}
+.presence-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.presence-head h2{font-family:Georgia,"Times New Roman",serif;font-size:25px;font-weight:400;letter-spacing:-.5px;margin:0}
+.presence-head p{font-size:12px;color:var(--muted);margin:0}
+.presence-legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:11px;color:var(--muted);margin:12px 0 16px}
+.presence-legend span{display:inline-flex;align-items:center;gap:6px}
+.presence-legend i{width:12px;height:12px;border-radius:50%;border:3px solid var(--state-free);display:inline-block;box-sizing:border-box}
+.presence-legend i.talking{border-color:var(--state-talking)}
+.presence-legend i.reporting{border-color:var(--state-reporting)}
+.presence-legend i.planning{border-color:var(--state-planning);border-style:dashed;border-width:2px}
+.presence-legend i.done{opacity:.4}
+.presence-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.presence-country{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.presence-country h3{font-size:12px;font-weight:600;margin:0 0 10px}
+.presence-people{display:flex;flex-wrap:wrap;gap:8px}
+.presence-person{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;padding:0;width:58px}
+.presence-person .agent-avatar{width:44px;height:44px;box-shadow:0 0 0 3px var(--white),0 0 0 6px var(--state-free);transition:box-shadow .2s,opacity .2s}
+.presence-person.talking .agent-avatar{box-shadow:0 0 0 3px var(--white),0 0 0 6px var(--state-talking)}
+.presence-person.reporting .agent-avatar{box-shadow:0 0 0 3px var(--white),0 0 0 6px var(--state-reporting)}
+.presence-person.planning .agent-avatar{box-shadow:0 0 0 3px var(--white),0 0 0 4px var(--state-planning);outline:2px dashed var(--state-planning);outline-offset:4px}
+.presence-person.done .agent-avatar{opacity:.4}
+.presence-person small{font-size:9.5px;line-height:1.2;color:var(--muted);text-align:center}
+.presence-person.talking small{color:var(--state-talking);font-weight:600}
+.presence-person:focus-visible{outline:3px solid #7d9670;outline-offset:4px;border-radius:8px}
+.bilateral-slots h2 small{font-family:Inter,-apple-system,sans-serif;font-size:12px;color:var(--muted);margin-left:6px;letter-spacing:0}
+.bilateral-slots .earlier-title{margin-top:26px}
+.meeting-card.live{border-color:var(--state-talking);box-shadow:inset 3px 0 0 var(--state-talking)}
+.meeting-card.past{background:var(--paper);opacity:.85}
+.meeting-card.past .meeting-topic{color:var(--muted)}
+.chip.live{border-color:var(--state-talking);color:var(--state-talking)}
+.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--state-talking);margin-right:6px;animation:live-pulse 1.4s ease-in-out infinite}
+@keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.viz-edge.live{stroke:var(--state-talking);stroke-opacity:.95}
+.viz-edge.past{stroke:var(--viz-axis);stroke-opacity:.6}
+.viz-edge.past.selected{stroke:var(--green);stroke-opacity:1}
+.viz-legend b.line.live{border-top-color:var(--state-talking)}
+.viz-legend b.line.past{border-top-color:var(--viz-axis)}
+@media(prefers-reduced-motion:reduce){.live-dot{animation:none}}

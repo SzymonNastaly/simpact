@@ -384,15 +384,38 @@ window.SimpactMarkdown = (() => {
       onSlot: slot => { networkSlot = slot; renderNetwork(); }}));
   }
 
+  // Round 2 presence: every country's people, ringed by what they are doing right now.
+  const PRESENCE = {busy:['talking','Talking'],updating:['reporting','Reporting to team'],planning:['planning','Choosing partners'],free:['free','Free'],finished:['done','Done']};
+  function renderPresence() {
+    const queue = bilaterals?.queue || [];
+    $('presence-board').hidden = !queue.length;
+    if (!queue.length) return;
+    const byAgent = Object.fromEntries(queue.map(item => [item.agent, item]));
+    const meetingById = Object.fromEntries(meetingsOf().map(meeting => [meeting.id, meeting]));
+    const groups = [...new Set(bilaterals.participants.map(p => p.delegation))];
+    const counts = Object.keys(PRESENCE).map(state => [state, queue.filter(item => item.state === state).length]).filter(([, n]) => n);
+    const personButton = p => {
+      const item = byAgent[p.agent] || {state:'free'}, [cls, label] = PRESENCE[item.state] || PRESENCE.free;
+      const meeting = item.meeting_id && meetingById[item.meeting_id];
+      const partner = meeting ? (meeting.initiator === p.agent ? meeting.partner : meeting.initiator) : null;
+      const tip = `<strong>${esc(fullName(p.agent))}</strong><br>${esc(label)}${partner ? ` with ${esc(fullName(partner))}` : ''}<br><span>Met ${item.partners_met ?? 0} of ${item.max_partners ?? 5} people${item.waiting_seconds ? ` · waiting ${esc(item.waiting_seconds)} s` : ''}</span>${item.priorities?.length ? `<br><span>Wants to meet: ${item.priorities.map(r => esc(fullName(r.member))).join(', ')}</span>` : ''}`;
+      const target = meeting ? `data-meeting="${esc(meeting.id)}"` : `data-agent="${esc(p.agent)}"`;
+      return `<button type="button" class="presence-person ${cls}" ${target} data-tip="${esc(tip)}" aria-label="${esc(`${fullName(p.agent)}: ${label}${partner ? ` with ${fullName(partner)}` : ''}`)}">${avatar(p)}<small>${esc(label)}</small></button>`;
+    };
+    replaceContent('presence-board', `<div class="presence-head"><h2>Who’s free</h2><p>${counts.map(([state, n]) => `${n} ${PRESENCE[state][1].toLowerCase()}`).join(' · ')}</p></div>
+      <div class="presence-legend">${Object.values(PRESENCE).map(([cls, label]) => `<span><i class="${cls}"></i>${esc(label)}</span>`).join('')}</div>
+      <div class="presence-grid">${groups.map(group => { const people = bilaterals.participants.filter(p => p.delegation === group); return `<article class="presence-country"><h3>${esc(people[0].delegation_name)}</h3><div class="presence-people">${people.map(personButton).join('')}</div></article>`; }).join('')}</div>`);
+  }
+
   function renderBilaterals() {
     renderBilateralControls();
     const meetings = meetingsOf();
     if (!meetings.some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetings.find(m => m.status === 'active')?.id || meetings[0]?.id || null;
-    const queue = bilaterals?.queue || [];
-    const agentRow = item => `<article class="queue-agent">${person(item.agent)}<span class="chip">${esc(item.state)} · ${item.partners_met}/5 people</span>${item.waiting_seconds ? `<small>Waiting ${esc(item.waiting_seconds)}s / 10s</small>` : ''}${item.priorities?.length ? `<ol>${item.priorities.map(request => `<li>${esc(fullName(request.member))}<small>${mdi(request.topic)}</small></li>`).join('')}</ol>` : ''}</article>`;
-    replaceContent('bilateral-slots', `<div class="agent-queues"><section><h2>Available agents</h2>${queue.filter(item => ['free','planning'].includes(item.state)).map(agentRow).join('') || empty('No agents waiting.')}</section><section><h2>Occupied agents</h2>${queue.filter(item => ['busy','updating'].includes(item.state)).map(agentRow).join('') || empty('No conversations in progress.')}</section></div>
-      ${queue.some(item => item.state === 'finished') ? `<details id="finished-agents"><summary>Finished agents</summary>${queue.filter(item => item.state === 'finished').map(agentRow).join('')}</details>` : ''}
-      <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${mdi(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`);
+    renderPresence();
+    const card = meeting => `<button type="button" class="meeting-card${meeting.status === 'active' ? ' live' : ' past'}${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${mdi(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${meeting.status === 'active' ? '<i class="live-dot" aria-hidden="true"></i>' : ''}${esc(meetingState(meeting))}</span><span>${meeting.messages.length} ${meeting.messages.length === 1 ? 'message' : 'messages'}</span></span></button>`;
+    const now = meetings.filter(meeting => meeting.status === 'active'), earlier = meetings.filter(meeting => meeting.status !== 'active').reverse();
+    replaceContent('bilateral-slots', meetings.length ? `<h2>Happening now <small>${now.length}</small></h2>${now.map(card).join('') || empty('No conversation is running right now.')}
+      ${earlier.length ? `<h2 class="earlier-title">Earlier <small>${earlier.length}</small></h2>${earlier.map(card).join('')}` : ''}` : empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.'));
     renderMeeting();
     renderNetwork();
     chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));

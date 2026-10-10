@@ -172,9 +172,9 @@ window.SimpactViz = (() => {
       const d = `M${a.x},${a.y} Q${qx},${qy} ${b.x},${b.y}`;
       const widthPx = 1.5 + Math.min(m.messages.length, 10) * .35;
       const kind = declined(m) ? 'declined' : m.mutual ? 'mutual' : 'one-sided';
-      const state = selected ? (m.id === selected ? ' selected' : ' faded') : '';
+      const state = (m.status === 'active' ? ' live' : ' past') + (selected ? (m.id === selected ? ' selected' : ' faded') : '');
       edges += `<path d="${d}" class="viz-edge ${kind}${state}" stroke-width="${m.id === selected ? widthPx + 1.5 : widthPx}"/>`;
-      const tipText = `<strong>${esc(names.fullName(m.initiator))} ↔ ${esc(names.fullName(m.partner))}</strong><br>${esc(m.topic)}<br><span>${continuous ? 'Round 2' : `Slot ${m.slot}`} · ${m.messages.length} messages · ${kind === 'mutual' ? 'both asked' : kind === 'declined' ? 'declined' : 'one side asked'}</span>`;
+      const tipText = `<strong>${esc(names.fullName(m.initiator))} ↔ ${esc(names.fullName(m.partner))}</strong><br>${esc(m.topic)}<br><span>${m.status === 'active' ? 'Talking now' : 'Ended'} · ${continuous ? 'Round 2' : `Slot ${m.slot}`} · ${m.messages.length} messages · ${kind === 'mutual' ? 'both asked' : kind === 'declined' ? 'declined' : 'one side asked'}</span>`;
       hits += `<path d="${d}" class="viz-edge-hit" data-meeting="${esc(m.id)}" data-tip="${esc(tipText)}" tabindex="0" role="button" aria-label="${esc(`${names.fullName(m.initiator)} and ${names.fullName(m.partner)}: ${m.topic}`)}"/>`;
     }
     let nodes = '';
@@ -194,7 +194,7 @@ window.SimpactViz = (() => {
     const pills = !continuous && slots.length > 1 ? `<div class="viz-pills" role="group" aria-label="Show slot">${['all', ...slots].map(s => `<button type="button" data-slot="${s}" aria-pressed="${s === slot}">${s === 'all' ? 'All slots' : `Slot ${s}`}</button>`).join('')}</div>` : '';
     const mutual = shown.filter(m => m.mutual).length, cross = shown.filter(m => people.find(p => p.agent === m.initiator)?.delegation !== people.find(p => p.agent === m.partner)?.delegation).length;
     el.innerHTML = `<div class="viz-heading"><h2>Who talked to whom</h2><p>${shown.length} conversations · ${cross} across delegations · ${mutual} both asked for. Thicker links had more messages; select one to read it.</p></div>
-      ${pills}<div class="viz-legend">${ROLE_ORDER.map(role => `<span><i style="background:${ROLE_COLORS[role]}"></i>${ROLE_LABELS[role]}</span>`).join('')}<span><i class="diamond"></i>Observer</span><span><b class="line mutual"></b>Both asked</span><span><b class="line one-sided"></b>One side asked</span><span><b class="line declined"></b>Declined</span></div>
+      ${pills}<div class="viz-legend">${ROLE_ORDER.map(role => `<span><i style="background:${ROLE_COLORS[role]}"></i>${ROLE_LABELS[role]}</span>`).join('')}<span><i class="diamond"></i>Observer</span><span><b class="line live"></b>Talking now</span><span><b class="line past"></b>Ended</span><span><b class="line mutual"></b>Both asked</span><span><b class="line one-sided"></b>One side asked</span><span><b class="line declined"></b>Declined</span></div>
       <figure class="viz-figure network">${svg(width, height, 'Network of bilateral conversations')}<g>${edges}</g><g>${hits}</g><g>${nodes}</g>${groupLabels}</svg></figure>`;
     el.querySelectorAll('[data-meeting]').forEach(path => {
       path.addEventListener('click', () => onSelect?.(path.dataset.meeting));
