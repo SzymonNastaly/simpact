@@ -1,4 +1,4 @@
-"""Nested orchestration: isolated teams -> six heads -> teams -> simultaneous pledges."""
+"""Nested orchestration: isolated teams -> heads -> teams -> simultaneous pledges, with observers around them."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
-from .briefs import load_briefs, DEFAULT_BRIEFS
+from .briefs import load_briefs, load_observers, DEFAULT_BRIEFS
 from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
 from .meetings import MeetingHub, Participant
 from .memory import EventStore, write_json
@@ -22,7 +22,8 @@ class Simulation:
                  evaluator: ClimateEvaluator | None = None,
                  backend_factory: Callable[[str], Backend] | None = None):
         self.config, self.output = config, output
-        self.briefs = load_briefs(briefs_directory, config.us_variant)
+        self.briefs = load_briefs(briefs_directory, config.us_variant, config.world)
+        self.observer_briefs = load_observers(config.observers, briefs_directory)
         if output:
             output.mkdir(mode=0o700, parents=True, exist_ok=False)
         self.store = EventStore(output / "events.jsonl" if output else None)
@@ -57,6 +58,17 @@ class Simulation:
                 self.agents[name] = member
                 self._model_registry[name] = backend.label
             self.teams[region] = team
+        # One representative per observer group; they meet members and speak to the press, nothing more.
+        self.observers: list[DelegationMember] = []
+        for group, brief in self.observer_briefs.items():
+            name = f"{group}.{Role.OBSERVER.value}"
+            model = config.agent_models.get(name, config.default_model)
+            backend = backend_factory(name) if backend_factory else (
+                OfflineBackend() if config.backend == "offline" else GeminiBackend(model))
+            member = DelegationMember(name, brief, Role.OBSERVER, config, backend)
+            self.observers.append(member)
+            self.agents[name] = member
+            self._model_registry[name] = backend.label
         if set(config.agent_models) - set(self.agents):
             raise ValueError("Per-agent model map contains unknown member IDs")
         self.heads = [members[0] for members in self.teams.values()]
@@ -69,7 +81,8 @@ class Simulation:
         self.floor_step = 0
         self.store.append("configuration", {"config": config.model_dump(mode="json"),
                           "agent_models": self._model_registry,
-                          "sources": {k: {"file": b.source_file, "sha256": b.source_sha256, "license": b.license, "attribution": b.attribution} for k, b in self.briefs.items()}},
+                          "sources": {k: {"file": b.source_file, "sha256": b.source_sha256, "license": b.license, "attribution": b.attribution}
+                                      for k, b in {**self.briefs, **self.observer_briefs}.items()}},
                           round=0, visibility="public")
 
     def context(self, member: DelegationMember) -> dict:
@@ -150,7 +163,7 @@ class Simulation:
             for name, action in actions.items():
                 self.store.append("individual_preparation", action.model_dump(mode="json"), round=1,
                                   visibility="individual", owners=[name], actor=name)
-        self._scene("prepare", list(self.agents.values()), simultaneous=True, resolve=resolve)
+        self._scene("prepare", [m for team in self.teams.values() for m in team], simultaneous=True, resolve=resolve)
 
     def _internal(self, region: str):
         def resolve(actions):
@@ -239,6 +252,16 @@ class Simulation:
         else:
             self.hub.close(actor, move.meeting_id)
 
+    def _press(self):
+        """Observers react in public to the commitments and mock outcome just published."""
+        if not self.observers:
+            return
+        def resolve(actions):
+            for name, action in actions.items():
+                self.store.append("observer_statement", {"speech": action.speech}, round=self.current_round,
+                                  visibility="public", actor=name)
+        self._scene("press", self.observers, simultaneous=True, resolve=resolve)
+
     def _offer_event(self, offer: NegotiationOffer):
         self.store.append("negotiation_offer", {"offer": offer.model_dump(mode="json"),
                           "accepted_by": sorted(self.accepted_by[offer.id]), "rejected_by": sorted(self.rejected_by[offer.id])},
@@ -281,9 +304,9 @@ class Simulation:
     def _submit(self, stage: str):
         def resolve(actions):
             commitments = {self.agents[name].brief.delegation.value: action.commitment for name, action in actions.items()}
-            # All six decisions were collected against frozen pre-submission views.
+            # Every decision was collected against frozen pre-submission views.
             if set(commitments) != set(self.briefs):
-                raise ValueError("Submission barrier requires all six delegations")
+                raise ValueError("Submission barrier requires every delegation")
             self.commitments[self.current_round] = commitments
             for name, action in actions.items():
                 self.store.append("summit_speech", {"speech": action.speech}, round=self.current_round,
@@ -358,6 +381,7 @@ class Simulation:
                 self._internal(region)
                 self._mandate(region)
             self._submit("announce")
+            self._press()
             for round_number in range(2, self.config.rounds + 1):
                 # International offers inform the next private team deliberation.
                 self._negotiate()
@@ -375,6 +399,7 @@ class Simulation:
                 self._negotiate()
                 self._member_floor()
                 self._submit("submit")
+                self._press()
                 if self.config.stop_on_target and self.outcomes[round_number].target_2c_achieved:
                     break
             self._settle_offers()

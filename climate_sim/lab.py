@@ -17,7 +17,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 
 from .agents import policy_distance
-from .briefs import load_briefs
+from .briefs import load_briefs, load_observers
 from .meetings import MeetingHub, Participant
 from .memory import Event, EventStore
 from .metrics import dispersion
@@ -31,7 +31,9 @@ class Lab:
     def __init__(self, run: Path, *, output: Path | None = None):
         self.state = json.loads((run / "state.json").read_text())
         self.events = [Event.model_validate_json(line) for line in (run / "events.jsonl").read_text().splitlines()]
-        self.briefs = load_briefs(us_variant=self.state["config"]["us_variant"])
+        config = self.state["config"]
+        self.briefs = load_briefs(us_variant=config["us_variant"], world=config.get("world", "six"))
+        self.observer_briefs = load_observers(config.get("observers", []))
         self.lock = threading.RLock()
         participants = [Participant(id=key, delegation=agent["delegation"], role=agent["role"],
                                    model=agent["backend"]) for key, agent in self.state["agents"].items()]
@@ -92,13 +94,15 @@ class Lab:
                     "individual_preparation", "internal_speech", "agent_trace", "internal_ballot",
                     "national_mandate", "summit_speech", "meeting_requested", "meeting_acknowledged",
                     "meeting_declined", "meeting_message", "meeting_closed", "meeting_expired",
-                    "meeting_outcome_reported", "team_meeting_report", "meeting_action_rejected")],
+                    "meeting_outcome_reported", "team_meeting_report", "meeting_action_rejected", "observer_statement")],
                 "notifications": [e.model_dump(mode="json") for e in round_events if e.kind == "team_meeting_report"],
-                "public_events": [e.model_dump(mode="json") for e in round_events if e.visibility == "public" and e.kind in ("summit_speech", "commitments", "negotiation_offer")],
+                "public_events": [e.model_dump(mode="json") for e in round_events if e.visibility == "public" and e.kind in ("summit_speech", "observer_statement", "commitments", "negotiation_offer")],
                 "climate_outcome": self.state["outcomes_by_round"].get(str(round_number))}
         return {"run": self.run_name, "scope": scope, "config": self.state["config"], "roster": roster,
                 "delegations": [{"id": k, "name": b.title, "goals": b.goals,
                                 "members": [x["agent"] for x in roster if x["delegation"] == k]} for k, b in self.briefs.items()],
+                "observers": [{"id": k, "name": b.title, "goals": b.goals,
+                               "members": [x["agent"] for x in roster if x["delegation"] == k]} for k, b in self.observer_briefs.items()],
                 "rounds": rounds, "human_role": self.human_role,
                 "notice": "Researcher replay of saved agent actions. Offline-scripted models are not Gemini. Meeting sandbox is manual; no LLM calls. Localhost only; no multi-user authentication."}
 

@@ -1,0 +1,44 @@
+{
+  "delegation": "other_developing",
+  "title": "Other Developing Nations (excluding Brazil and Saudi Arabia)",
+  "variant": "excluding_brazil_saudi_arabia",
+  "source_file": "materials/6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+  "source_sha256": "66589bf4f86a006f86a872a91dfb77d11439e6cd4d14b0dfcaf5a6272c493a43",
+  "source_url": "https://www.climateinteractive.org/world-climate-simulation-resources/",
+  "attribution": "World Climate Simulation materials by Climate Interactive, MIT Sloan, and the UMass Lowell Climate Change Initiative. Updated November 2025. Adapted for nested-agent experiments.",
+  "license": "CC BY 4.0",
+  "goals": [
+    "Protect survival and pursue the 1.5C objective",
+    "Secure debt-free finance for adaptation and clean development",
+    "Protect forests while improving living standards"
+  ],
+  "negotiating_constraints": [
+    "Ambitious action requires strong wealthy-nation support",
+    "Developed nations should take responsibility for historic emissions",
+    "Funding must enable rather than prevent development"
+  ],
+  "opportunities": [
+    "Leapfrog fossil fuels with clean energy",
+    "Finance forest protection and reduce land degradation"
+  ],
+  "climate_risks": [
+    "Food insecurity, extreme heat and displacement",
+    "Loss of low-lying island nations",
+    "Drought, disease and ecological disruption"
+  ],
+  "finance_position": "recipient",
+  "experimental_baseline": {
+    "delegation": "other_developing",
+    "emissions_peak_year": 2045,
+    "reduction_start_year": 2050,
+    "annual_reduction_rate_percent": 1.5,
+    "deforestation_prevention_percent": 60,
+    "afforestation_percent": 50,
+    "climate_fund_billion_per_year": -210
+  },
+  "experimental_limits": {
+    "reduction_rate_maximum": 7.0,
+    "finance_absolute_maximum": 2000
+  },
+  "adaptation_notes": "In the eight-delegation world Brazil and Saudi Arabia negotiate separately; this team keeps the rest of the bloc. Goals and qualitative constraints paraphrase the briefing. Baseline commitments, numeric ceilings, finance-role restrictions, personalities and scoring are author-created experimental assumptions, NOT official prescribed positions. Source text reflects November 2025 and is not a live policy fact-check."
+}

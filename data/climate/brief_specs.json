@@ -75,5 +75,43 @@
     "finance_position": "contributor",
     "baseline": [2026, 2026, 4.0, 50, 40, 50],
     "limits": [8.0, 150]
+  },
+  "other_developing_rest": {
+    "file": "6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+    "title": "Other Developing Nations (excluding Brazil and Saudi Arabia)",
+    "goals": ["Protect survival and pursue the 1.5C objective", "Secure debt-free finance for adaptation and clean development", "Protect forests while improving living standards"],
+    "negotiating_constraints": ["Ambitious action requires strong wealthy-nation support", "Developed nations should take responsibility for historic emissions", "Funding must enable rather than prevent development"],
+    "opportunities": ["Leapfrog fossil fuels with clean energy", "Finance forest protection and reduce land degradation"],
+    "climate_risks": ["Food insecurity, extreme heat and displacement", "Loss of low-lying island nations", "Drought, disease and ecological disruption"],
+    "finance_position": "recipient",
+    "baseline": [2045, 2050, 1.5, 60, 50, -210],
+    "limits": [7.0, 2000],
+    "delegation": "other_developing",
+    "variant": "excluding_brazil_saudi_arabia",
+    "note": "In the eight-delegation world Brazil and Saudi Arabia negotiate separately; this team keeps the rest of the bloc."
+  },
+  "brazil": {
+    "file": "6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+    "title": "Brazil",
+    "goals": ["Deliver a credible outcome as host of COP30 in Belém", "End illegal deforestation in the Amazon by 2030 while supporting rural livelihoods", "Secure international finance for standing forests and a just energy transition"],
+    "negotiating_constraints": ["Developed nations must lead on emissions cuts and finance", "Oil and gas expansion and agribusiness are major economic interests", "Forest finance must respect national sovereignty over the Amazon"],
+    "opportunities": ["A largely renewable electricity grid", "Large-scale forest restoration and avoided deforestation", "Biofuels and green industrial investment"],
+    "climate_risks": ["Amazon dieback and drought", "Floods and heat affecting cities and agriculture"],
+    "finance_position": "recipient",
+    "baseline": [2030, 2032, 2.0, 70, 40, -40],
+    "limits": [7.0, 300],
+    "note": "No World Climate briefing exists for Brazil. Its members read the Other Developing Nations briefing, which covers Central and South America. The goals, constraints, opportunities and risks below are author-written summaries of public positions up to November 2025."
+  },
+  "saudi_arabia": {
+    "file": "6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+    "title": "Saudi Arabia",
+    "goals": ["Protect oil export revenues and the role of hydrocarbons in the global economy", "Diversify the economy under Vision 2030", "Advance the Saudi Green Initiative's afforestation goals and a 2060 net-zero target"],
+    "negotiating_constraints": ["Resist language that phases out fossil fuels; favour emissions-focused approaches such as carbon capture", "Developed nations bear historic responsibility, so there is no obligation to contribute climate finance", "The economic impact of climate policy on fossil fuel exporters must be addressed"],
+    "opportunities": ["Very large solar and wind potential", "Low-carbon hydrogen exports", "Carbon capture and the circular carbon economy"],
+    "climate_risks": ["Extreme heat beyond human tolerance", "Water scarcity and desertification"],
+    "finance_position": "flexible",
+    "baseline": [2035, 2040, 1.0, 0, 10, 0],
+    "limits": [5.0, 100],
+    "note": "No World Climate briefing exists for Saudi Arabia. Its members read the Other Developing Nations briefing, which covers most of the Middle East. The goals, constraints, opportunities and risks below are author-written summaries of public positions up to November 2025."
   }
 }

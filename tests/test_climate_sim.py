@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from climate_sim.agents import DelegationMember, GeminiBackend, OfflineBackend
-from climate_sim.briefs import load_briefs
+from climate_sim.briefs import SOURCES, load_briefs
 from climate_sim.evaluator import MockClimateEvaluator, ReviewedOutcomeEvaluator, commitment_digest
 from climate_sim.memory import EventStore
 from climate_sim.models import ClimateCommitment, NegotiationOffer, Role, SimulationConfig
@@ -25,7 +25,7 @@ def test_official_briefs_have_sources_and_separate_experimental_parameters():
     assert len(briefs) == 6
     for key, brief in briefs.items():
         assert brief.delegation.value == key
-        assert len(brief.source_pages) == 2
+        assert (SOURCES / brief.source_file).read_bytes().startswith(b"%PDF-")
         assert len(brief.source_sha256) == 64
         assert "NOT official" in brief.adaptation_notes
         assert "Climate Interactive" in brief.attribution
@@ -238,8 +238,10 @@ def test_reviewed_missing_outcome_preserves_handoff_inputs(tmp_path):
     assert (output / "failure.json").exists()
 
 
-def test_gemini_repairs_phase_errors_without_foreign_context():
+def test_gemini_repairs_phase_errors_without_foreign_context(monkeypatch):
     from types import SimpleNamespace
+    from climate_sim import agents
+    monkeypatch.setitem(agents._UPLOADED_PDFS, load_briefs()["india"].source_sha256, "https://example.invalid/files/india")
     requests = []
     class FakeModels:
         def generate_content(self, **kwargs):
@@ -259,8 +261,8 @@ def test_gemini_repairs_phase_errors_without_foreign_context():
     member.observe(json.dumps(sim.context(member)))
     action = backend.decide(member, member._context)
     assert action.commitment.delegation.value == "india" and len(requests) == 2
-    assert "requires a structured commitment" in requests[1]["contents"]
-    assert all("FOREIGN_PRIVATE_SENTINEL" not in request["contents"] for request in requests)
+    assert "requires a structured commitment" in requests[1]["contents"][-1]
+    assert all("FOREIGN_PRIVATE_SENTINEL" not in request["contents"][-1] for request in requests)
     assert all(request["config"].response_mime_type == "application/json" for request in requests)
 
 
@@ -281,8 +283,10 @@ def test_gemini_schema_serializes_through_real_sdk(monkeypatch):
     from google import genai
     from google.genai import types
 
+    from climate_sim import agents
     monkeypatch.setenv("GEMINI_API_KEY", "test-only-key")
     brief = load_briefs()["india"]
+    monkeypatch.setitem(agents._UPLOADED_PDFS, brief.source_sha256, "https://example.invalid/files/india")
     requests = []
 
     def respond(request):

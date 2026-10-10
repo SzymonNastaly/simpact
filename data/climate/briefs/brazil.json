@@ -1,0 +1,44 @@
+{
+  "delegation": "brazil",
+  "title": "Brazil",
+  "variant": "national",
+  "source_file": "materials/6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+  "source_sha256": "66589bf4f86a006f86a872a91dfb77d11439e6cd4d14b0dfcaf5a6272c493a43",
+  "source_url": "https://www.climateinteractive.org/world-climate-simulation-resources/",
+  "attribution": "World Climate Simulation materials by Climate Interactive, MIT Sloan, and the UMass Lowell Climate Change Initiative. Updated November 2025. Adapted for nested-agent experiments.",
+  "license": "CC BY 4.0",
+  "goals": [
+    "Deliver a credible outcome as host of COP30 in Belém",
+    "End illegal deforestation in the Amazon by 2030 while supporting rural livelihoods",
+    "Secure international finance for standing forests and a just energy transition"
+  ],
+  "negotiating_constraints": [
+    "Developed nations must lead on emissions cuts and finance",
+    "Oil and gas expansion and agribusiness are major economic interests",
+    "Forest finance must respect national sovereignty over the Amazon"
+  ],
+  "opportunities": [
+    "A largely renewable electricity grid",
+    "Large-scale forest restoration and avoided deforestation",
+    "Biofuels and green industrial investment"
+  ],
+  "climate_risks": [
+    "Amazon dieback and drought",
+    "Floods and heat affecting cities and agriculture"
+  ],
+  "finance_position": "recipient",
+  "experimental_baseline": {
+    "delegation": "brazil",
+    "emissions_peak_year": 2030,
+    "reduction_start_year": 2032,
+    "annual_reduction_rate_percent": 2.0,
+    "deforestation_prevention_percent": 70,
+    "afforestation_percent": 40,
+    "climate_fund_billion_per_year": -40
+  },
+  "experimental_limits": {
+    "reduction_rate_maximum": 7.0,
+    "finance_absolute_maximum": 300
+  },
+  "adaptation_notes": "No World Climate briefing exists for Brazil. Its members read the Other Developing Nations briefing, which covers Central and South America. The goals, constraints, opportunities and risks below are author-written summaries of public positions up to November 2025. Goals and qualitative constraints paraphrase the briefing. Baseline commitments, numeric ceilings, finance-role restrictions, personalities and scoring are author-created experimental assumptions, NOT official prescribed positions. Source text reflects November 2025 and is not a live policy fact-check."
+}

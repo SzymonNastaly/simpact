@@ -8,7 +8,7 @@ import sys
 
 from .briefs import DEFAULT_BRIEFS
 from .evaluator import ReviewedOutcomeEvaluator
-from .models import SimulationConfig
+from .models import ObserverId, SimulationConfig
 from .simulation import Simulation
 
 
@@ -28,6 +28,9 @@ def main() -> int:
     parser.add_argument("--model", default=SimulationConfig.model_fields["default_model"].default)
     parser.add_argument("--agent-models", type=Path, help="JSON object mapping exact member IDs to Gemini model names")
     parser.add_argument("--us-variant", choices=["national", "climate_alliance_proxy"], default="national")
+    parser.add_argument("--world", choices=["six", "eight"], default="six", help="eight adds Brazil and Saudi Arabia")
+    parser.add_argument("--observers", nargs="*", choices=[o.value for o in ObserverId], default=[],
+                        help="observer groups who meet delegates and give press statements; no values means all three")
     parser.add_argument("--stop-on-target", action="store_true")
     parser.add_argument("--no-member-meetings", action="store_true", help="Disable autonomous member-level meeting scenes")
     parser.add_argument("--member-floor-ticks", type=int, default=0, help="Optional additional group-floor ticks; 0 disables")
@@ -42,7 +45,8 @@ def main() -> int:
             offer_visibility=args.offer_visibility, memory_length=args.memory_length, meeting_ticks=args.meeting_ticks,
             backend=args.backend, default_model=args.model,
             agent_models=json.loads(args.agent_models.read_text()) if args.agent_models else {},
-            us_variant=args.us_variant, stop_on_target=args.stop_on_target,
+            us_variant=args.us_variant, stop_on_target=args.stop_on_target, world=args.world,
+            observers=args.observers if args.observers or "--observers" not in sys.argv else list(ObserverId),
             member_meetings=not args.no_member_meetings, member_floor_ticks=args.member_floor_ticks)
         output = args.output or Path("runs") / (datetime.now(timezone.utc).strftime("climate-%Y%m%dT%H%M%S-%fZ") + f"-seed{args.seed}")
         evaluator = ReviewedOutcomeEvaluator(args.reviewed_outcomes) if args.reviewed_outcomes else None
