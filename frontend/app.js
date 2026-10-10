@@ -39,14 +39,24 @@
   }
 
   function renderCountries() {
+    const focused = document.activeElement;
+    const focusCountry = focused?.dataset.country;
+    const focusControl = focused?.dataset.controlCountry;
     $('countries').innerHTML = session.countries.map(country => {
       const members = country.members;
       const dots = members.slice(0,6).map(agent => `<span class="member-dot ${roleClass(agent)}" title="${esc(roleName(agent))}">${esc(initials(agent))}</span>`).join('');
-      return `<button type="button" class="country-card" data-country="${esc(country.id)}" style="--country-color:${colors[country.id] || '#edf1e9'}" aria-label="Open ${esc(country.name)}, ${members.length} agents">
+      const live = country.live;
+      const completed = country.completed || live?.phase === 'completed';
+      const highlight = completed && ['usa','eu'].includes(country.id);
+      const status = completed ? 'Meeting concluded' : live?.status === 'error' ? 'Retry needed' : live?.active ? 'Conversation running' : live?.messages ? 'Conversation paused' : 'Ready to begin';
+      return `<article class="country-card${highlight ? ' country-completed' : ''}" style="--country-color:${colors[country.id] || '#edf1e9'}"><button type="button" class="country-open" data-country="${esc(country.id)}" style="--country-color:${colors[country.id] || '#edf1e9'}" aria-label="Open ${esc(country.name)}, ${members.length} agents">
         <span class="country-card-top"><span class="country-code" aria-hidden="true">${esc(codes[country.id] || country.id.slice(0,2).toUpperCase())}</span><span class="card-arrow" aria-hidden="true">↗</span></span>
         <span class="country-name">${esc(country.name)}</span><span class="country-meta">${members.length} ${members.length === 1 ? 'agent' : 'agents'}</span>
-        <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>`;
+        <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>
+        <div class="country-actions"><span class="country-status" role="status">${esc(status)}</span>${live ? `<button type="button" class="country-play" data-control-country="${esc(country.id)}" aria-label="${completed ? 'Meeting concluded for' : live.active ? 'Pause' : 'Start or continue'} ${esc(country.name)}" ${completed || controlPending || live.status === 'pausing' ? 'disabled' : ''}><span aria-hidden="true">${completed ? '✓' : live.active ? 'Ⅱ' : '▶'}</span> ${completed ? 'Finished' : live.active ? 'Pause' : live.messages || live.status !== 'idle' ? 'Continue' : 'Play'}</button>` : ''}</div></article>`;
     }).join('');
+    if (focusCountry) document.querySelector(`[data-country="${focusCountry}"]`)?.focus();
+    if (focusControl) document.querySelector(`[data-control-country="${focusControl}"]`)?.focus();
     const total = session.countries.reduce((sum, country) => sum + country.members.length, 0);
     $('roster-total').textContent = `${session.countries.length} delegations · ${total} agents`;
     $('run-caption').textContent = `${session.mode === 'live' ? (session.backend === 'offline' ? 'Live scripted session' : 'Live Gemini conversation') : (session.backend === 'offline' ? 'Recorded scripted session' : 'Recorded Gemini session')} · ${session.run}`;
@@ -205,6 +215,7 @@
       const next = await read('/api/round-one?scope=researcher');
       const previous = selectedCountry ? countryById(selectedCountry) : null;
       session = next;
+      renderCountries();
       if (selectedCountry) {
         const country = countryById(selectedCountry);
         if (country.discussion.length !== previous?.discussion.length) renderDiscussion(country);
@@ -217,26 +228,28 @@
     finally { polling = false; pollTimer = window.setTimeout(poll,1200); }
   }
 
-  async function controlConversation(operation = null) {
-    if (!selectedCountry || controlPending) return;
-    const countryId = selectedCountry;
-    const country = countryById(selectedCountry);
+  async function controlConversation(operation = null, countryId = selectedCountry) {
+    if (!countryId || controlPending) return;
+    const country = countryById(countryId);
+    if (!country?.live || country.completed || country.live.phase === 'completed') return;
     const button = $('conversation-control');
     button.disabled = true;
     controlPending = true;
+    renderCountries();
     try {
-      const response = await fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({operation:operation || (country.live.active ? 'pause' : 'start'),country:selectedCountry})});
+      const response = await fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({operation:operation || (country.live.active ? 'pause' : 'start'),country:countryId})});
       if (!response.ok) throw new Error('The conversation control failed. Please try again.');
       country.live = await response.json();
       if (selectedCountry === countryId) renderLive(country);
     } catch (error) { showError(error); }
-    finally { controlPending = false; if (selectedCountry) renderLive(countryById(selectedCountry)); }
+    finally { controlPending = false; renderCountries(); if (selectedCountry) renderLive(countryById(selectedCountry)); }
   }
 
   document.addEventListener('click',event => {
-    const button = event.target.closest('button[data-country], button[data-agent]');
+    const button = event.target.closest('button[data-country], button[data-agent], button[data-control-country]');
     if (!button) return;
-    if (button.dataset.country) openCountry(button.dataset.country);
+    if (button.dataset.controlCountry) controlConversation(null,button.dataset.controlCountry);
+    else if (button.dataset.country) openCountry(button.dataset.country);
     else if (button.dataset.agent) openAgent(button.dataset.agent,button,button.dataset.trace || null);
   });
   $('back-to-countries').addEventListener('click',goBack);
