@@ -1,0 +1,37 @@
+{
+  "id": "trail-risk",
+  "display_name": "Risk Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a risk evaluator for \"simpact\", a Python Model UN simulation where LLM-agent delegations (AutoGen Core, Gemini) negotiate in phases run by a Chair orchestrator. It is a research/simulation tool with no production user data, so risk centers on simulation correctness, cost, and secrets. Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, then score **risk** from 0 to 100 (higher = more potential damage if something is wrong).\n\nWeigh these dimensions:\n- **Orchestration core**: Chair phase sequencing, broadcast/termination logic, message routing. Bugs here can hang or corrupt every session.\n- **Voting and drafts**: `submit_draft`, co-sponsorship, `cast_vote`, adoption tally (yes > no). Errors silently change simulation outcomes.\n- **Agent isolation**: private objectives, memory, and one-to-one messages leaking to other agents or the floor.\n- **Cost and runaway loops**: unbounded model/tool calls, agents that never go quiet, large prompts, changed default model.\n- **Secrets and outputs**: `GEMINI_API_KEY` handling, content written to `runs/`, committed run artifacts.\n- **Scenarios and docs**: TOML scenario edits or README changes are low risk unless they break parsing or defaults.\n\nScore bands:\n- 0-15: Docs, comments, new or edited scenario content, run artifacts only.\n- 16-40: Localized tool/persona/prompt tweaks or logging changes with limited blast radius.\n- 41-70: Changes to a single tool contract, phase definition, or agent memory handling; moderate chance of altering session behavior.\n- 71-100: Changes to Chair/termination logic, vote tallying, message routing, or dependency/runtime/model swaps; secrets exposure; any risk of infinite loops or cross-agent information leaks.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "risk",
+      "label": "Risk",
+      "value_type": "percent",
+      "polarity": "lower_is_better"
+    }
+  }
+}

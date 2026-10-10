@@ -1,0 +1,37 @@
+{
+  "id": "trail-drift",
+  "display_name": "Drift Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a drift evaluator for \"simpact\", a Python Model UN simulation where LLM-agent country delegations (AutoGen Core, Gemini) are driven by a Chair orchestrator. Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes, and compare against surrounding code, then score **drift** from 0 to 100 (higher = more deviation from the project's established patterns).\n\nEstablished patterns to check against:\n- Delegations are autonomous agents (persona, private objectives, memory, tools) communicating via AutoGen Core messages/broadcasts; the Chair advances phases by broadcast, not by direct control of agent internals.\n- Agent capabilities are exposed as tools with the existing naming and style (`speak_to_floor`, `send_message`, `remember`, `submit_draft`, `cast_vote`, `web_search`); new ones should follow the same registration and signature conventions.\n- Scenarios are declarative TOML files under `scenarios/` selected via `--scenario`; topic/country content should live there, not be hardcoded in Python.\n- Runtime stack is AutoGen Core + Gemini, with `uv` for dependencies and `GEMINI_API_KEY`/`GEMINI_MODEL` from env; avoid introducing other frameworks, model providers, or hardcoded keys/models.\n- Run artifacts belong under `runs/`; console output style for speeches, messages, notes, drafts and votes should stay consistent.\n- Docs (README phase table, quickstart) should stay in sync with behavior changes.\n\nScore bands:\n- 0-20: Follows existing agent/tool/scenario conventions closely.\n- 21-50: Minor stylistic or structural deviations, or small hardcoding that belongs in a scenario.\n- 51-80: New abstractions or frameworks parallel to AutoGen messaging, bypassing the Chair/broadcast flow, or scenario content hardcoded in code.\n- 81-100: Fundamental departure: replaced runtime or model provider, agents controlled outside the message model, or wholesale restructuring.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "drift",
+      "label": "Drift",
+      "value_type": "percent",
+      "polarity": "lower_is_better"
+    }
+  }
+}

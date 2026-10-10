@@ -1,0 +1,37 @@
+{
+  "id": "trail-confidence",
+  "display_name": "Confidence Eval",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You are a confidence evaluator for \"simpact\", a Python Model UN simulation where LLM-agent country delegations (AutoGen Core runtime, Gemini model) negotiate across phases run by a Chair orchestrator. Analyze the changes on branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD` to see the changes. Read the touched code (agents, tools, Chair/phase logic, scenario TOML files, run outputs) as needed, then score **confidence** from 0 to 100 (higher = more confident the changes are correct and adequately verified).\n\nWeigh these dimensions:\n- **Phase/termination correctness**: phases must end when every agent goes quiet; check for message loops, missed broadcasts, deadlocks, or agents that never go idle.\n- **Tool contract correctness**: `speak_to_floor`, `send_message`, `remember`, `submit_draft`, `cast_vote`, `web_search` — argument validation, co-sponsor handling, and the adoption rule (yes > no, abstain excluded) must stay consistent.\n- **Scenario validity**: TOML scenarios must parse and keep required fields (delegations, personas, private objectives, phases); changes should be runnable with `--scenario` and `--phases N`.\n- **LLM nondeterminism**: logic must tolerate malformed, missing, or off-script model output (bad tool args, no tool call, unknown country names) without crashing.\n- **Verification evidence**: tests, or a demonstrated run, covering the change. Untested changes to orchestration or voting logic deserve a clear penalty; the model call cannot be assumed deterministic, so look for mocks or deterministic seams.\n\nScore bands:\n- 85-100: Small, well-understood change; orchestration/vote logic covered by tests or a clear run; edge cases handled.\n- 60-84: Likely correct but only partly verified, or touches prompts/scenarios whose behavior depends on model output.\n- 30-59: Changes phase flow, tool signatures, or vote tallying with little or no verification, or has plausible unhandled model-output failure paths.\n- 0-29: Likely broken: deadlock/infinite loop risk, invalid scenario or tool schema, or crashes on ordinary runs.\n\nOutput ONLY this JSON object as the very last line of your response:\n\n{\"value\": <number 0-100>, \"rationale\": \"<1-2 sentence explanation>\"}"
+  },
+  "select": {
+    "trigger_types": [
+      "api",
+      "push"
+    ]
+  },
+  "output": {
+    "adapter": "last_json_line",
+    "result_type": "trail_monitor",
+    "trail_monitor": {
+      "key": "confidence",
+      "label": "Confidence",
+      "value_type": "percent",
+      "polarity": "higher_is_better"
+    }
+  }
+}
