@@ -49,7 +49,6 @@
   function renderCountries() {
     const focused = document.activeElement;
     const focusCountry = focused?.dataset.country;
-    const focusControl = focused?.dataset.controlCountry;
     $('countries').innerHTML = session.countries.map(country => {
       const members = country.members;
       const dots = members.slice(0,6).map(agent => `<span class="member-dot ${roleClass(agent)}" title="${esc(roleName(agent))}">${esc(initials(agent))}</span>`).join('');
@@ -61,10 +60,10 @@
         <span class="country-card-top"><span class="country-code" aria-hidden="true">${esc(codes[country.id] || country.id.slice(0,2).toUpperCase())}</span><span class="card-arrow" aria-hidden="true">↗</span></span>
         <span class="country-name">${esc(country.name)}</span><span class="country-meta">${members.length} ${members.length === 1 ? 'agent' : 'agents'}</span>
         <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>
-        <div class="country-actions"><span class="country-status" role="status">${esc(status)}</span>${live ? `<button type="button" class="country-play" data-control-country="${esc(country.id)}" aria-label="${completed ? 'Meeting concluded for' : live.active ? 'Pause' : 'Start or continue'} ${esc(country.name)}" ${completed || controlPending || live.status === 'pausing' ? 'disabled' : ''}><span aria-hidden="true">${completed ? '✓' : live.active ? 'Ⅱ' : '▶'}</span> ${completed ? 'Finished' : live.active ? 'Pause' : live.messages || live.status !== 'idle' ? 'Continue' : 'Play'}</button>` : ''}</div></article>`;
+        <div class="country-actions"><span class="country-status" role="status">${esc(status)}</span></div></article>`;
     }).join('');
     if (focusCountry) document.querySelector(`[data-country="${focusCountry}"]`)?.focus();
-    if (focusControl) document.querySelector(`[data-control-country="${focusControl}"]`)?.focus();
+    renderRoundControl();
     const total = session.countries.reduce((sum, country) => sum + country.members.length, 0);
     $('roster-total').textContent = `${session.countries.length} delegations · ${total} agents`;
     $('run-caption').textContent = `${session.mode === 'live' ? (session.backend === 'offline' ? 'Live scripted session' : 'Live Gemini conversation') : (session.backend === 'offline' ? 'Recorded scripted session' : 'Recorded Gemini session')} · ${session.run}`;
@@ -103,8 +102,6 @@
     const statuses = {idle:'Ready to begin',queued:live.phase === 'summaries' ? 'Preparing agent summaries' : live.phase === 'plan' ? 'Preparing the next-round action plan' : 'Waiting for the next agent',paused:'Conversation paused',limited:'Message limit reached',error:live.error,completed:'Meeting concluded · summaries and next-round plan ready'};
     $('live-status').textContent = live.status === 'thinking' ? `${agent ? roleName(agent) : 'Agent'} is ${live.stage === 'prepare' ? 'preparing' : live.stage === 'summary' ? 'writing a summary' : live.stage === 'plan' ? 'preparing the action plan' : 'thinking'}…` : live.status === 'pausing' ? 'Pausing after the current response…' : statuses[live.status] || live.status;
     $('live-budget').textContent = live.phase === 'completed' ? 'Round 1 is complete.' : live.phase === 'summaries' || live.phase === 'plan' ? 'The team is wrapping up this round.' : `Up to ${session.message_budget} new messages per start · ${live.remaining} remaining`;
-    $('conversation-control').textContent = live.phase === 'completed' ? 'Meeting concluded' : live.active ? 'Pause conversation' : live.messages || live.status !== 'idle' ? 'Continue conversation' : 'Start conversation';
-    $('conversation-control').disabled = controlPending || live.status === 'pausing' || live.phase === 'completed';
     $('finish-conversation').hidden = live.phase && live.phase !== 'discussion';
     $('finish-conversation').textContent = live.finish_requested ? 'Head assessing closure…' : 'Ask head to conclude';
     $('finish-conversation').disabled = controlPending || !live.can_finish || live.finish_requested;
@@ -329,12 +326,40 @@
     finally { polling = false; pollTimer = window.setTimeout(poll,1200); }
   }
 
+  function renderRoundControl() {
+    const countries = session.countries.filter(country => country.live && !country.completed && country.live.phase !== 'completed');
+    const active = countries.some(country => country.live.active);
+    $('round-controls').hidden = session.mode !== 'live';
+    $('round-control').textContent = !countries.length ? 'Round 1 finished' : active ? 'Ⅱ Pause all countries' : '▶ Play all countries';
+    $('round-control').disabled = controlPending || !countries.length;
+    $('round-status').textContent = `${session.countries.length - countries.length} of ${session.countries.length} meetings concluded`;
+  }
+
+  async function controlRound() {
+    if (controlPending) return;
+    const unfinished = session.countries.filter(country => country.live && !country.completed && country.live.phase !== 'completed');
+    const operation = unfinished.some(country => country.live.active) ? 'pause' : 'start';
+    const targets = unfinished.filter(country => operation === 'pause' ? country.live.active : !country.live.active);
+    if (!targets.length) return;
+    controlPending = true;
+    renderRoundControl();
+    try {
+      const results = await Promise.allSettled(targets.map(async country => {
+        const response = await fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({operation,country:country.id})});
+        if (!response.ok) throw new Error(`Could not ${operation} ${country.name}. Try again.`);
+        country.live = await response.json();
+      }));
+      const failure = results.find(result => result.status === 'rejected');
+      if (failure) throw failure.reason;
+      $('error').hidden = true;
+    } catch (error) { showError(error); }
+    finally { controlPending = false; renderCountries(); }
+  }
+
   async function controlConversation(operation = null, countryId = selectedCountry) {
     if (!countryId || controlPending) return;
     const country = countryById(countryId);
     if (!country?.live || country.completed || country.live.phase === 'completed') return;
-    const button = $('conversation-control');
-    button.disabled = true;
     controlPending = true;
     renderCountries();
     try {
@@ -347,10 +372,9 @@
   }
 
   document.addEventListener('click',event => {
-    const button = event.target.closest('button[data-country], button[data-agent], button[data-control-country], button[data-meeting]');
+    const button = event.target.closest('button[data-country], button[data-agent], button[data-meeting]');
     if (!button) return;
-    if (button.dataset.controlCountry) controlConversation(null,button.dataset.controlCountry);
-    else if (button.dataset.meeting) {
+    if (button.dataset.meeting) {
       selectedMeeting = button.dataset.meeting;
       renderBilaterals();
       if (window.matchMedia('(max-width: 850px)').matches) $('bilateral-conversation').scrollIntoView({block:'start'});
@@ -365,7 +389,7 @@
   $('close-agent').addEventListener('click',closeAgent);
   $('agent-dialog').addEventListener('close',() => { ++agentRequest; selectedAgent = null; $('agent-details').innerHTML = ''; });
   $('retry').addEventListener('click',load);
-  $('conversation-control').addEventListener('click',() => controlConversation());
+  $('round-control').addEventListener('click',controlRound);
   $('finish-conversation').addEventListener('click',() => controlConversation('finish'));
   load();
 })();

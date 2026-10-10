@@ -166,8 +166,9 @@ summary{font-size:12px;color:var(--green);cursor:pointer;line-height:1.5}
 .country-open{display:flex;flex-direction:column;align-items:stretch;text-align:left;background:transparent;border:0;padding:0;flex:1;width:100%}
 .country-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
 .country-status{font-size:12px;color:var(--muted)}
-.country-play{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--green);border-radius:8px;background:var(--green);color:white;padding:9px 12px;font-size:12px;white-space:nowrap}
-.country-play:disabled{opacity:.65;cursor:default}
 .country-card.country-completed,.country-card.country-completed:hover{border-color:#c33838;box-shadow:0 0 0 2px #c33838}
 .country-completed .country-status{color:#a32929}
 @media(max-width:560px){.country-card .member-dots{position:static;max-width:none;margin-top:18px}.country-actions{margin-top:18px}}
+
+#round-control{border:0;border-radius:8px;background:var(--green);color:white;padding:12px 20px;font-weight:600}
+#round-status{font-size:12px;color:var(--muted)}

@@ -13,6 +13,7 @@
   <main id="main">
     <section id="country-view" aria-labelledby="round-title">
       <div class="intro"><p class="eyebrow">THE FIRST CONVERSATION</p><h1 id="round-title">Round 1</h1><p class="lead">Every country starts with a conversation.<br>Choose a delegation to listen in.</p><p class="roster-total" id="roster-total" aria-live="polite">Loading delegations…</p></div>
+      <div id="round-controls" class="live-controls" hidden><button id="round-control" type="button">▶ Play all countries</button><span id="round-status" role="status"></span></div>
       <div id="countries" class="country-grid" aria-label="Countries"></div>
       <button id="bilaterals-entry" class="bilaterals-entry" type="button" hidden><span><span class="eyebrow">ROUND 2 · BILATERALS</span><span class="entry-title">One-to-one conversations</span><span class="entry-status" id="bilaterals-entry-status"></span></span><span class="card-arrow" aria-hidden="true">↗</span></button>
     </section>
@@ -26,7 +27,7 @@
       <button id="back-to-countries" class="back-button" type="button"><span aria-hidden="true">←</span> All countries</button>
       <div class="country-heading"><p class="eyebrow">ROUND 1 · DELEGATION DISCUSSION</p><h1 id="country-title" tabindex="-1"></h1><p class="lead" id="country-description"></p></div>
       <div id="agents" class="agent-strip" aria-label="Delegation agents"></div>
-      <div id="live-controls" class="live-controls" hidden><div><p id="live-status" role="status"></p><small id="live-budget"></small></div><div class="conversation-actions"><button id="conversation-control" type="button">Start conversation</button><button id="finish-conversation" type="button" class="secondary-button" disabled>Ask head to conclude</button></div></div>
+      <div id="live-controls" class="live-controls" hidden><div><p id="live-status" role="status"></p><small id="live-budget"></small></div><div class="conversation-actions"><button id="finish-conversation" type="button" class="secondary-button" disabled>Ask head to conclude</button></div></div>
       <div class="conversation-heading"><h2>The conversation</h2><span id="message-count"></span></div>
       <div id="discussion" class="conversation" aria-label="Round 1 discussion"></div>
       <section id="round-results" class="round-results" aria-label="Round summaries and next-round action plan" hidden></section>
