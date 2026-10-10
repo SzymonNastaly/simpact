@@ -173,6 +173,21 @@ window.SimpactMarkdown = (() => {
     || bilaterals?.participants.find(member => member.agent === id);
   const groupName = agent => countryById(agent.delegation)?.name || bilaterals?.participants.find(member => member.agent === agent.agent)?.delegation_name || agent.delegation;
   const fullName = id => { const agent = agentById(id); return agent ? (agent.role === 'observer' ? groupName(agent) : `${groupName(agent)} · ${roleName(agent)}`) : id; };
+  const shortRoles = {head:'Head',economic:'Economy',climate:'Climate',observer:'Observer'};
+  const shortRole = agent => shortRoles[roleClass(agent)] || roles[agent.role] || agent.role;
+  const miniFlag = id => { const flag = window.SimpactCasting?.flag(id) || 'none'; return flag === 'none' ? '' : `<span class="mini-flag" style="background-image:${esc(flag)}" aria-hidden="true"></span>`; };
+  const average = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const money = value => `${value < 0 ? '−' : ''}$${Math.abs(Math.round(value))}B`;
+  // A team's position: the mean of its members' opening proposals and of their latest stated ones.
+  function teamPosition(country) {
+    const latest = country.members.map(member => {
+      const said = country.discussion.filter(event => event.actor === member.agent && event.payload?.commitment);
+      return said.length ? said[said.length - 1].payload.commitment : member.initial_preference;
+    }).filter(Boolean);
+    const opening = country.members.map(member => member.initial_preference).filter(Boolean);
+    const mean = (list, key) => average(list.map(item => Number(item[key])).filter(Number.isFinite));
+    return {from: mean(opening, 'annual_reduction_rate_percent'), to: mean(latest, 'annual_reduction_rate_percent'), peak: mean(latest, 'emissions_peak_year'), fund: mean(latest, 'climate_fund_billion_per_year')};
+  }
 
   async function read(path) {
     const response = await fetch(path);
@@ -204,22 +219,50 @@ window.SimpactMarkdown = (() => {
   function renderCountries() {
     replaceContent('countries', session.countries.map(country => {
       const members = country.members;
-      const dots = members.slice(0,6).map(agent => window.SimpactCasting?.avatar(agent,roleClass(agent),true) || `<span class="member-dot ${roleClass(agent)}" title="${esc(roleName(agent))}">${esc(initials(agent))}</span>`).join('');
       const flag = window.SimpactCasting?.flag(country.id) || 'none';
       const live = country.live;
       const completed = country.completed || live?.phase === 'completed';
       const status = completed ? 'Meeting concluded' : live?.status === 'error' ? 'Retry needed' : live?.active ? 'Conversation running' : live?.messages ? 'Conversation paused' : 'Ready to begin';
-      return `<article class="country-card${completed ? ' country-completed' : ''}" style="--country-color:${colors[country.id] || '#edf1e9'};--country-flag:${esc(flag)}"><button type="button" class="country-open" data-country="${esc(country.id)}" style="--country-color:${colors[country.id] || '#edf1e9'}" aria-label="Open ${esc(country.name)}, ${members.length} agents">
-        <span class="country-card-top"><span class="country-code" aria-hidden="true">${esc(codes[country.id] || country.id.slice(0,2).toUpperCase())}</span><span class="card-arrow" aria-hidden="true">↗</span></span>
-        <span class="country-name">${esc(country.name)}</span><span class="country-meta">${members.length} ${members.length === 1 ? 'agent' : 'agents'}</span>
-        <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>
-        <div class="country-actions"><span class="country-status" role="status">${esc(status)}</span></div></article>`;
+      const tone = completed ? ' done' : live?.status === 'error' ? ' warn' : live?.active ? ' live' : '';
+      const position = teamPosition(country);
+      const cut = position.to == null ? null : position.from != null && position.from.toFixed(1) !== position.to.toFixed(1) ? `${position.from.toFixed(1)} → ${position.to.toFixed(1)}` : position.to.toFixed(1);
+      const stats = [['Cut %/yr', cut], ['Peak', position.peak == null ? null : String(Math.round(position.peak))], ['Fund /yr', position.fund == null ? null : money(position.fund)]].filter(([, value]) => value != null);
+      const lineup = members.map(agent => `<span class="lineup-member" title="${esc(roleName(agent))}">${avatar(agent)}<small>${esc(shortRole(agent))}</small></span>`).join('');
+      const messages = country.discussion.length;
+      return `<article class="country-card${completed ? ' country-completed' : ''}"><button type="button" class="country-open" data-country="${esc(country.id)}" aria-label="Open ${esc(country.name)}, ${members.length} agents, ${esc(status)}">
+        <span class="country-flag" style="--country-flag:${esc(flag)};--country-color:${colors[country.id] || '#edf1e9'}" aria-hidden="true"></span>
+        <span class="country-card-body"><span class="country-title-row"><span class="country-name">${esc(country.name)}</span><span class="card-arrow" aria-hidden="true">↗</span></span>
+        <span class="country-meta">${esc(codes[country.id] || country.id.slice(0,2).toUpperCase())} · ${members.length} ${members.length === 1 ? 'agent' : 'agents'} · ${messages} ${messages === 1 ? 'message' : 'messages'}</span>
+        <span class="lineup" aria-hidden="true">${lineup}</span>
+        ${stats.length ? `<span class="team-stats" title="Team average of members’ opening and latest proposals">${stats.map(([label, value]) => `<span class="team-stat"><small>${esc(label)}</small><b>${esc(value)}</b></span>`).join('')}</span>` : ''}</span></button>
+        <div class="country-actions"><span class="status-chip${tone}" role="status">${esc(status)}</span></div></article>`;
     }).join(''));
+    renderRoundStats();
     renderRoundControl();
     const total = session.countries.reduce((sum, country) => sum + country.members.length, 0);
     $('roster-total').textContent = `${session.countries.length} delegations · ${total} agents`;
     chart('positions-chart', session.countries.map(country => [country.members, country.discussion.length]), el => window.SimpactViz.positions(el, session.countries, chartNames));
     $('run-caption').textContent = `${session.mode === 'live' ? (session.backend === 'offline' ? 'Live scripted session' : 'Live Gemini conversation') : (session.backend === 'offline' ? 'Recorded scripted session' : 'Recorded Gemini session')} · ${session.run}`;
+  }
+
+  // Key numbers for the whole round, all computed from the delegations' proposals.
+  function renderRoundStats() {
+    const positions = session.countries.map(teamPosition);
+    const cuts = positions.map(position => position.to).filter(value => value != null);
+    const funds = positions.map(position => position.fund).filter(value => value != null);
+    const offered = funds.filter(value => value > 0).reduce((sum, value) => sum + value, 0);
+    const requested = -funds.filter(value => value < 0).reduce((sum, value) => sum + value, 0);
+    const concluded = session.countries.filter(country => country.completed || country.live?.phase === 'completed').length;
+    const messages = session.countries.reduce((sum, country) => sum + country.discussion.length, 0);
+    const tiles = [
+      [String(messages), 'Messages so far'],
+      [`${concluded} of ${session.countries.length}`, 'Delegations concluded'],
+      cuts.length ? [average(cuts).toFixed(1), 'Average cut, % per year'] : null,
+      funds.length ? [money(offered), 'Finance offered per year'] : null,
+      requested > 0 ? [money(requested), 'Finance requested per year'] : null,
+    ].filter(Boolean);
+    $('round-stats').hidden = !session.countries.length;
+    replaceContent('round-stats', tiles.map(([value, label]) => `<div class="stat"><b>${esc(value)}</b><small>${esc(label)}</small></div>`).join(''));
   }
 
   function openCountry(id) {
@@ -370,8 +413,9 @@ window.SimpactMarkdown = (() => {
   }
 
   const meetingsOf = () => (bilaterals?.rounds || []).flatMap(round => round.slots.flatMap(slot => slot.meetings));
-  const person = id => { const agent = agentById(id); return `${agent ? avatar(agent) : ''}<span class="person-name"><strong>${esc(agent && agent.role !== 'observer' ? groupName(agent) : fullName(id))}</strong><small>${esc(agent ? roleName(agent) : '')}</small></span>`; };
-  const meetingState = meeting => meeting.status === 'active' ? 'Talking' : meeting.close_reason === 'limit' ? 'Message limit' : meeting.messages.length <= 1 && meeting.closed_by === meeting.partner ? 'Declined' : 'Ended';
+  const person = id => { const agent = agentById(id); return `<span class="fixture-side">${agent ? avatar(agent) : ''}<span class="person-name"><strong>${agent ? miniFlag(agent.delegation) : ''}${esc(agent && agent.role !== 'observer' ? groupName(agent) : fullName(id))}</strong><small>${esc(agent ? roleName(agent) : '')}</small></span></span>`; };
+  const understood = meeting => Object.values(meeting.reports || {}).some(report => report.agreements?.length);
+  const meetingState = meeting => meeting.status === 'active' ? 'Talking' : understood(meeting) ? 'Understanding' : meeting.close_reason === 'limit' ? 'Message limit' : meeting.messages.length <= 1 && meeting.closed_by === meeting.partner ? 'Declined' : 'Ended';
 
   function renderMovement(country) {
     chart('movement-chart', [country.id, country.discussion.length], el => window.SimpactViz.movement(el, country, chartNames));
@@ -415,14 +459,43 @@ window.SimpactMarkdown = (() => {
     const results = bilaterals.country_results || [];
     $('country-results').hidden = !results.length && bilaterals.live?.phase !== 'reporting';
     replaceContent('country-results', `<h2>Heads report back</h2><p class="conversation-note">Each country's satisfaction is its head negotiator's own assessment of Round 2.</p>${results.map(result => `<article class="round-summary"><h3>${esc(groupName(agentById(result.agent)))}</h3><p><strong>${esc(result.satisfaction)} / 10 satisfied</strong></p><div class="md">${md(result.summary)}</div><div class="md">${md(result.satisfaction_reason)}</div>${[['Achievements',result.achievements],['Still unresolved',result.unresolved_issues],['Next steps',result.next_steps]].map(([title,items]) => items?.length ? `<h4>${title}</h4><ul>${items.map(item => `<li>${mdi(item)}</li>`).join('')}</ul>` : '').join('')}</article>`).join('') || empty('The heads are preparing their reports from their teams’ discussions.')}`);
-    const card = meeting => `<button type="button" class="meeting-card${meeting.status === 'active' ? ' live' : ' past'}${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${mdi(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${meeting.status === 'active' ? '<i class="live-dot" aria-hidden="true"></i>' : ''}${esc(meetingState(meeting))}</span><span>${meeting.messages.length} ${meeting.messages.length === 1 ? 'message' : 'messages'}</span></span></button>`;
+    const card = meeting => `<button type="button" class="meeting-card${meeting.status === 'active' ? ' live' : ' past'}${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">vs</span>${person(meeting.partner)}</span><span class="meeting-topic">${mdi(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : {Understanding:' agreed',Declined:' declined'}[meetingState(meeting)] || ''}">${meeting.status === 'active' ? '<i class="live-dot" aria-hidden="true"></i>' : ''}${esc(meetingState(meeting))}</span><span>${meeting.messages.length} ${meeting.messages.length === 1 ? 'message' : 'messages'}</span></span></button>`;
     const now = meetings.filter(meeting => meeting.status === 'active'), earlier = meetings.filter(meeting => meeting.status !== 'active').reverse();
     replaceContent('bilateral-slots', meetings.length ? `<h2>Happening now <small>${now.length}</small></h2>${now.map(card).join('') || empty('No conversation is running right now.')}
       ${earlier.length ? `<h2 class="earlier-title">Earlier <small>${earlier.length}</small></h2>${earlier.map(card).join('')}` : ''}` : empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.'));
+    renderDelegationTable(meetings);
     renderMeeting();
     renderNetwork();
     chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));
     chart('bilateral-metrics', (bilaterals?.rounds || []).map(round => round.metrics), el => window.SimpactViz.metrics(el, bilaterals, chartNames));
+  }
+
+  // Per-delegation counts from the bilateral record; satisfaction comes from the heads' own reports.
+  function renderDelegationTable(meetings) {
+    $('bilateral-table').hidden = !meetings.length;
+    if (!meetings.length) return;
+    const delegationOf = id => agentById(id)?.delegation;
+    const delegations = bilaterals.delegations || [...new Map(bilaterals.participants.map(p => [p.delegation, {id:p.delegation, name:p.delegation_name}])).values()];
+    const satisfaction = Object.fromEntries((bilaterals.country_results || []).map(result => [delegationOf(result.agent), result.satisfaction]));
+    const showSatisfaction = Object.keys(satisfaction).length > 0;
+    const rows = delegations.map(delegation => {
+      const own = id => delegationOf(id) === delegation.id;
+      const mine = meetings.filter(meeting => own(meeting.initiator) || own(meeting.partner));
+      const partners = new Set(mine.map(meeting => delegationOf(own(meeting.initiator) ? meeting.partner : meeting.initiator)));
+      const cells = [
+        mine.length,
+        mine.filter(meeting => own(meeting.initiator) || meeting.mutual).length,
+        partners.size,
+        mine.reduce((sum, meeting) => sum + meeting.messages.filter(message => own(message.actor)).length, 0),
+        mine.reduce((sum, meeting) => sum + Object.entries(meeting.reports || {}).filter(([id]) => own(id)).reduce((count, [, report]) => count + (report.agreements?.length || 0), 0), 0),
+        mine.filter(meeting => meetingState(meeting) === 'Declined' && own(meeting.partner)).length,
+        ...(showSatisfaction ? [satisfaction[delegation.id] == null ? '–' : `${satisfaction[delegation.id]} / 10`] : []),
+      ];
+      return `<tr><th scope="row">${miniFlag(delegation.id)}${esc(delegation.name)}</th>${cells.map(cell => `<td>${esc(cell)}</td>`).join('')}</tr>`;
+    });
+    const heads = ['Meetings','Asked for','Countries met','Messages sent','Understandings','Declined', ...(showSatisfaction ? ['Satisfaction'] : [])];
+    replaceContent('bilateral-table', `<div class="viz-heading"><h2>Delegations at a glance</h2><p>Counted from the bilateral record. Understandings are what each side told its own team, not verified agreements.</p></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">Delegation</th>${heads.map(head => `<th scope="col">${esc(head)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`);
   }
 
   function renderBilateralControls() {

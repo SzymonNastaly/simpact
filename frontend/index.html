@@ -14,6 +14,7 @@
   <main id="main">
     <section id="country-view" aria-labelledby="round-title">
       <div class="intro"><p class="eyebrow">THE FIRST CONVERSATION</p><h1 id="round-title">Round 1</h1><p class="lead">Every country starts with a conversation.<br>Choose a delegation to listen in.</p><p class="roster-total" id="roster-total" aria-live="polite">Loading delegations…</p></div>
+      <div id="round-stats" class="stat-strip" aria-label="Round 1 in numbers" hidden></div>
       <div id="round-controls" class="live-controls" hidden><button id="round-control" type="button">▶ Play all countries</button><button id="reset-round-one" type="button" class="secondary-button">Reset Round 1</button><span id="round-status" role="status"></span></div>
       <div id="countries" class="country-grid" aria-label="Countries"></div>
       <section id="positions-chart" class="viz-panel" aria-label="Where the delegations stand" hidden></section>
@@ -25,6 +26,7 @@
       <div id="bilateral-controls" class="live-controls" hidden><div><p id="bilateral-status" role="status"></p><small id="bilateral-detail"></small></div><button id="bilateral-control" type="button">Start bilaterals</button><button id="finish-bilaterals" type="button" class="secondary-button">End discussions &amp; hear results</button><button id="reset-round-two" type="button" class="secondary-button">Reset Round 2</button></div>
       <section id="country-results" class="round-results" aria-label="Head negotiators report the results" hidden></section>
       <section id="presence-board" class="presence" aria-label="Who is free and who is talking" hidden></section>
+      <section id="bilateral-table" class="viz-panel" aria-label="Each delegation in Round 2" hidden></section>
       <section id="bilateral-network" class="viz-panel" aria-label="Who talked to whom" hidden></section>
       <section id="bilateral-relations" class="viz-panel" aria-label="How the delegations relate" hidden></section>
       <section id="bilateral-metrics" class="viz-panel" aria-label="How each delegation behaved" hidden></section>
