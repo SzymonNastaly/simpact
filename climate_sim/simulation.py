@@ -9,8 +9,9 @@ from typing import Callable
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
 from .briefs import load_briefs, DEFAULT_BRIEFS
 from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
+from .meetings import MeetingHub, Participant
 from .memory import EventStore, write_json
-from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
+from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MeetingAction, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
 from .scenes import run_scene
 from .voting import ranked_choice
 
@@ -59,6 +60,11 @@ class Simulation:
         if set(config.agent_models) - set(self.agents):
             raise ValueError("Per-agent model map contains unknown member IDs")
         self.heads = [members[0] for members in self.teams.values()]
+        # One clock for every meeting phase, so meeting IDs and deadlines stay unique across rounds.
+        self.hub = MeetingHub([Participant(id=name, delegation=m.brief.delegation.value, role=m.role.value,
+                                           model=m.backend.label) for name, m in self.agents.items()],
+                              store=self.store)
+        self._meeting_start_tick = 0
         self.store.append("configuration", {"config": config.model_dump(mode="json"),
                           "agent_models": self._model_registry,
                           "sources": {k: {"file": b.source_file, "sha256": b.source_sha256, "license": b.license, "attribution": b.attribution} for k, b in self.briefs.items()}},
@@ -92,14 +98,23 @@ class Simulation:
             result["mandate"] = self.mandates[region].model_dump(mode="json")
         if region in self._candidates:
             result["candidates"] = {k: c.model_dump(mode="json") for k, c in self._candidates[region].items()}
+        if self.stage == "meet":
+            # Live protocol state, like shared_positions: only meetings this member sends or is invited to.
+            result["meetings"] = self.hub.view(member.name)["meetings"]
+            result["directory"] = [{"id": name, "delegation": m.brief.delegation.value, "role": m.role.value}
+                                   for name, m in self.agents.items() if name != member.name]
+            result.update(tick=self.hub.tick, phase_tick=self.hub.tick - self._meeting_start_tick,
+                          acknowledgement_ticks=self.hub.acknowledgement_ticks)
         return result
 
     def _scene(self, stage: str, participants: list[DelegationMember], *, simultaneous=False,
                turns=1, resolve: Callable[[dict[str, MemberAction]], None]):
         self.stage = stage
         regions = {m.brief.delegation.value for m in participants}
-        visibility = "individual" if stage == "prepare" else ("delegation" if stage in ("internal", "mandate", "vote") else "public")
+        visibility = "individual" if stage in ("prepare", "meet") else ("delegation" if stage in ("internal", "mandate", "vote") else "public")
         owners = [m.name for m in participants] if visibility == "individual" else (sorted(regions) if visibility == "delegation" else [])
+        if stage == "meet":
+            owners = ["researcher"]  # who is busy in meetings is itself private
         self.store.append("scene_started", {"stage": stage, "participants": [m.name for m in participants],
                           "engine": "concordia.simultaneous" if simultaneous else "concordia.sequential", "turns": turns},
                           round=self.current_round, visibility=visibility, owners=owners)
@@ -166,6 +181,44 @@ class Simulation:
                           "election_rounds": trace, "tie_rule": "Eliminate lexically last candidate among equal minimum vote counts"},
                           round=self.current_round, visibility="delegation", owners=[region])
         del self._candidates[region]
+
+    def _meet(self):
+        """Member-to-member meetings across roles and delegations, under the meetings.py protocol. Everyone may
+        act on the first tick; after that only members with an invitation to answer or an active meeting do."""
+        if not self.config.meeting_ticks:
+            return
+        self.hub.round_number = self.current_round
+        self._meeting_start_tick = self.hub.tick
+        def resolve(actions):
+            for name, action in actions.items():
+                for move in action.meeting_actions:
+                    try:
+                        self._apply_meeting_action(name, move)
+                    except (ValueError, PermissionError) as error:
+                        # Simultaneous moves can collide (e.g. a close and a message); tell only the mover.
+                        self.store.append("meeting_action_rejected", {"tick": self.hub.tick, "action": move.model_dump(mode="json"),
+                                          "error": str(error)}, round=self.current_round, visibility="individual",
+                                          owners=[name], actor=name)
+        participants = list(self.agents.values())
+        for _ in range(self.config.meeting_ticks):
+            self._scene("meet", participants, simultaneous=True, resolve=resolve)
+            self.hub.advance(1)
+            busy = {p for m in self.hub.meetings.values() if m.status == "active" for p in m.participants}
+            busy |= {p for m in self.hub.meetings.values() if m.status == "pending"
+                     for p, state in m.acknowledgements.items() if state == "pending"}
+            participants = [m for name, m in self.agents.items() if name in busy]
+            if not participants:
+                break
+
+    def _apply_meeting_action(self, actor: str, move: MeetingAction):
+        if move.operation == "request":
+            self.hub.request(actor, move.invitees, move.topic)
+        elif move.operation == "respond":
+            self.hub.respond(actor, move.meeting_id, bool(move.accepted))
+        elif move.operation == "message":
+            self.hub.message(actor, move.meeting_id, move.text)
+        else:
+            self.hub.close(actor, move.meeting_id)
 
     def _offer_event(self, offer: NegotiationOffer):
         self.store.append("negotiation_offer", {"offer": offer.model_dump(mode="json"),
@@ -261,6 +314,8 @@ class Simulation:
                     if offer.expires_after_round < round_number and offer.status in ("proposed", "accepted"):
                         offer.status = "expired"
                         self._offer_event(offer)
+                # Team meetings and negotiations (World Climate's round 2+): members reach out before deliberating.
+                self._meet()
                 for region in self.teams:
                     self._internal(region)
                     self._mandate(region)
@@ -278,6 +333,7 @@ class Simulation:
                      "commitments_by_round": {str(r): {k: c.model_dump(mode="json") for k, c in cs.items()} for r, cs in self.commitments.items()},
                      "outcomes_by_round": {str(r): out.model_dump(mode="json") for r, out in self.outcomes.items()},
                      "offers": [{**o.model_dump(mode="json"), "accepted_by": sorted(self.accepted_by[o.id]), "rejected_by": sorted(self.rejected_by[o.id])} for o in self.offers.values()],
+                     "meetings": self.hub.view(researcher=True),
                      "metrics": metrics}
             if self.output:
                 write_json(self.output / "state.json", state)

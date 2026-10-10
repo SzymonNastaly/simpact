@@ -13,6 +13,10 @@ uv run python -m climate_sim --seed 42 --output runs/my-climate-run
 uv run python -m climate_sim.lab --run runs/my-climate-run --port 8766
 ```
 
+Between rounds, members also meet each other on their own under the same five-tick
+acknowledgement protocol; the lab lists those meetings per perspective (`--meeting-ticks 0`
+turns them off). Gemini members use `gemini-3.8-flash`.
+
 Open `http://127.0.0.1:8766/`. This is a local researcher replay and a manual meeting
 protocol sandbox, not a live multi-user summit. Set `GEMINI_API_KEY` locally and add
 `--backend gemini` to generate LLM agent runs. Offline policies and the mock climate
@@ -23,9 +27,9 @@ controllers, meeting protocol details and the remaining live-integration work.
 
 ## Original Model UN simulator
 
-A Model UN simulation with LLM agents. Each country delegation is an autonomous agent with its own persona, private objectives, memory and tools. Delegations give speeches, negotiate privately one to one, draft resolutions and vote, while a Chair (the orchestrator) moves the session through its phases with broadcasts.
+A Model UN simulation with LLM agents. Each country delegation is an autonomous agent with its own persona, private objectives, memory and tools. Delegations give speeches, negotiate privately one to one, draft resolutions and vote, while a Chair moves the session through its phases.
 
-Built on [AutoGen Core](https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/index.html), the event-driven runtime from Microsoft AutoGen, with Gemini as the model.
+Built on [Concordia](https://github.com/google-deepmind/concordia), Google DeepMind's library for generative agent-based simulations, with Gemini 3.8 Flash as the model.
 
 ## Quickstart
 
@@ -37,15 +41,16 @@ export GEMINI_API_KEY=...
 uv run model_un.py                 # full session: 5 phases, 6 delegations
 uv run model_un.py --phases 2      # only opening statements and the caucus
 uv run model_un.py --scenario scenarios/my_topic.toml
-GEMINI_MODEL=gemini-3.8-flash uv run model_un.py   # default: gemini-flash-latest
-python check_scenario.py           # validate scenarios/*.toml before spending model calls
+uv run model_un.py --resume runs/<timestamp>/state.json   # continue a run after its last completed round
+uv run model_un.py --verbose       # also print Concordia's step-by-step engine trace
+uv run python check_scenario.py    # validate scenarios/*.toml before spending model calls
 ```
 
-The console shows speeches, private messages, notes, drafts and votes as they happen, then the vote results.
+The console shows speeches, private messages, tool calls, drafts and votes as they happen, then the vote results.
 
 ## A session
 
-The default scenario, [`scenarios/loss_and_damage.toml`](scenarios/loss_and_damage.toml), has the USA, China, India, Germany, Saudi Arabia and Tuvalu negotiating who pays into the UN Loss and Damage Fund. The Chair runs five phases. Each phase is one broadcast, and the phase ends when every agent has gone quiet.
+The default scenario, [`scenarios/loss_and_damage.toml`](scenarios/loss_and_damage.toml), has the USA, China, India, Germany, Saudi Arabia and Tuvalu negotiating who pays into the UN Loss and Damage Fund. The Chair runs five phases. Each phase opens with every delegation acting, and ends when every delegation has gone quiet.
 
 | Phase | What delegations do |
 |---|---|
@@ -59,46 +64,61 @@ The default scenario, [`scenarios/loss_and_damage.toml`](scenarios/loss_and_dama
 
 ```mermaid
 flowchart LR
-    Chair([Chair / orchestrator]) -- "Broadcast<br/>topic: broadcast" --> D
-    subgraph D[Delegations]
+    subgraph GM[Game master: Chair]
+        Chair([Chair<br/>phases, turns, moves])
+        S[(Secretariat<br/>speeches, drafts, votes)]
+        Q[[Observation queue]]
+    end
+    subgraph D[Delegations: Concordia entities]
         USA & China & India & Germany & Saudi_Arabia & Tuvalu
     end
-    USA -- "DirectMessage<br/>topic: inbox.China" --> China
-    Tuvalu -- "FloorSpeech<br/>topic: floor" --> D
-    Tuvalu -- FloorSpeech --> S
-    Germany -- "SubmitDraft / CastVote<br/>(RPC, returns the result)" --> S[(Secretariat<br/>no LLM)]
+    Chair -- "call to action:<br/>phase instructions + move format" --> D
+    D -- "one JSON turn each:<br/>moves + private thought" --> Chair
+    Chair -- "drafts, votes" --> S
+    Chair -- "speech: everyone else<br/>message: recipient only<br/>results: the mover" --> Q
+    Q -- "observations at<br/>their next turn" --> D
 ```
 
-Everything is an agent on one AutoGen Core runtime, and agents talk only through messages:
+Concordia splits a simulation into **entities**, which observe and act, and a **game master**, which decides who acts, tells them what they may do, and works out what their actions cause. Entities never hold references to each other: everything they learn reaches them as an observation from the game master.
 
-| Message | Route | What triggers |
+Each step of Concordia's simultaneous engine is one round:
+
+1. The Chair names the delegations due this round. A phase opens with everyone; after that, only delegations that received a private message act again.
+2. Each of them reads its queued observations, then answers the Chair's call to action in parallel. The call to action carries the phase instructions and the list of moves.
+3. The Chair carries out every move in a fixed delegation order, records drafts and votes with the Secretariat, and queues observations for whoever should see them.
+
+| Move | Who observes it | What else happens |
 |---|---|---|
-| `Broadcast` | `broadcast` topic, every delegation subscribes | Each delegation thinks and acts (LLM call) |
-| `DirectMessage` | `inbox.<name>` topic, only that delegation subscribes | The recipient thinks and may reply |
-| `FloorSpeech` | `floor` topic, everyone subscribes | Nothing: the speech is added to each listener's prompt context. No LLM call, so speeches stay cheap. |
-| `SubmitDraft`, `CastVote` | RPC to the Secretariat | The Secretariat records it and returns a draft ID or confirmation to the tool call |
+| `speak_to_floor` | Every other delegation | The Secretariat records the speech |
+| `send_message` | Only the recipient | The recipient acts again next round |
+| `submit_draft` | Only the sponsor, with the Secretariat's reply | Registered as `L.1`, `L.2`... A resubmission replaces the sponsor's draft |
+| `cast_vote` | Only the voter, with the Secretariat's reply | Counted in the results |
 
-**A delegation** (`Delegate` in [`model_un.py`](model_un.py), built on `PersonaAgent` in [`swarm.py`](swarm.py)) has:
+Every delegation is also told what its own moves did and what it thought, so its history includes its own side of each conversation.
 
-- **Persona.** Name, public position, private objectives, red lines and negotiating style, all from the scenario file. Other delegations see only the public position, through the agent index.
-- **Memory.** The last 30 messages of its own conversation, plus long-term notes it writes with `remember`. Both go into every prompt.
-- **Tools.** `send_message`, `list_agents`, `remember`, `web_search` (Google Search grounding through Gemini), `speak_to_floor`, `submit_draft` and `cast_vote`.
-- **Think loop.** On every incoming broadcast or private message it calls the LLM and runs the tools it asks for, repeating until the model answers with plain text (its private thought) or 6 rounds have passed.
+**A delegation** (the `PersonaAgent` prefab in [`swarm.py`](swarm.py)) is a Concordia entity built from components:
 
-**The Secretariat** is plain code with no LLM. It holds the official record of speeches, drafts and votes, so the results don't depend on what agents remember.
+- **Persona.** Name, public position, private objectives, red lines and negotiating style, all from the scenario file. Other delegations see only the public position, through the directory in every prompt.
+- **Memory.** Its last 50 observations (Concordia's `LastNObservations` over an `AssociativeMemory`), plus long-term notes it writes with `remember`. Both go into every prompt.
+- **Tools.** `web_search` (Google Search grounding through Gemini) and `remember`. The model can call them before it answers, through Concordia's `InteractiveDocumentWithTools`, up to 5 calls per turn.
+- **Moves.** Its answer is one JSON object, `{"moves": [...], "thought": "..."}`. The thought is private: the Chair logs it and echoes it back to the delegation only.
+
+**The Chair and the Secretariat** (in [`model_un.py`](model_un.py)) are plain code with no LLM. The Chair is one component answering the engine's four questions: is the session over, who acts next, in what format, and what did the moves cause. The Secretariat holds the official record of speeches, drafts and votes, so the results don't depend on what agents remember. Observations go through Concordia's `MakeObservation` queue with its LLM fallback turned off, so nobody observes anything the Chair didn't send them.
 
 **Guardrails for long runs:**
 
-- **One message at a time.** Each agent handles its inbox in order, behind a lock.
-- **Reply-chain cap.** A chain of private replies stops after `max_hops` (default 4) until the next phase.
-- **Failed LLM calls.** The error is logged on one line and the agent carries on.
+- **One turn per round.** Each delegation acts at most once per round, and all of a round's moves are resolved together.
+- **Reply-chain cap.** After `max_hops` (default 4) rounds of replies, private messages are refused until the next phase.
+- **Failed LLM calls.** Each call is retried with backoff. If it still fails, the error is logged on one line and the delegation sits that round out.
+- **Unreadable answers.** If a turn isn't valid JSON, nothing happens, and the delegation is told why at its next turn.
 
 ## Output
 
 Each run writes to `runs/<timestamp>/`:
 
-- `events.jsonl`: every message on the bus, recorded by `TranscriptRecorder`, an AutoGen intervention handler that sees all traffic without the agents knowing.
-- `state.json`: each delegation's conversation history and notes, plus the Secretariat's record (speeches, drafts, votes, results).
+- `events.jsonl`: every phase and move as the Chair carried it out, including refused moves and the Secretariat's replies.
+- `state.json`: Concordia's checkpoint of every component, rewritten after each round. That covers each delegation's memories and notes, the Secretariat's record (speeches, drafts, votes, results), the Chair's place in the agenda and undelivered observations. `--resume` continues from it.
+- `log.html`: Concordia's log viewer, with every prompt and answer step by step, and each delegation's memories.
 
 ## Writing a scenario
 
@@ -110,7 +130,7 @@ agenda = "..."
 max_hops = 4
 
 [[delegations]]
-name = "France"                 # agent id: letters, digits, underscores
+name = "France"                 # entity name: letters, digits, underscores
 title = "the delegation of France"
 public_position = "..."         # visible to every delegation
 objectives = "..."              # private
@@ -119,7 +139,7 @@ style = "..."                   # private
 
 [[phases]]
 name = "Opening statements"
-instruction = "... {agenda} ... {committee} ... {drafts} ..."   # what the Chair broadcasts
+instruction = "... {agenda} ... {committee} ... {drafts} ..."   # what the Chair asks delegations to do
 ```
 
 Phases run in order. `{drafts}` is filled with the Secretariat's current draft resolutions, which is how the voting phase sees the final texts.
@@ -128,21 +148,22 @@ Phases run in order. `{drafts}` is filled with the Secretariat's current draft r
 
 | File | Contents |
 |---|---|
-| [`swarm.py`](swarm.py) | Scenario-independent layer: message types, agent index (`Directory`), `PersonaAgent` (memory, tools, think loop, save/load state), `register_persona`, `TranscriptRecorder` |
-| [`gemini.py`](gemini.py) | Gemini chat client for AutoGen and the `web_search` tool |
-| [`model_un.py`](model_un.py) | The Model UN scenario: committee messages, `Secretariat`, `Delegate`, and the session loop |
+| [`swarm.py`](swarm.py) | Scenario-independent layer: `FunctionTool` (a Python function as a Concordia tool), `Notes` (the `remember` component), `ToolUseAct` (the act component with the tool loop), and the `PersonaAgent` prefab |
+| [`gemini.py`](gemini.py) | Concordia's Gemini model with retries, pinned to `gemini-3.8-flash`, and the `web_search` function |
+| [`model_un.py`](model_un.py) | The Model UN scenario: `Secretariat`, `Chair`, the `ChairGameMaster` prefab, and the session runner |
 | [`scenarios/`](scenarios) | Scenario files |
+| [`data/climate/`](data/climate) | Original World Climate Simulation briefings and facilitator guide (not used by the simulation yet) |
 
 To extend:
 
-- **New tool for delegations:** add a method to `Delegate` and list it in `extra_tools()`.
-- **New kind of event:** add a dataclass and a `@message_handler` on the agents that should receive it.
-- **Other LLM:** pass any AutoGen `ChatCompletionClient`, such as the OpenAI or Anthropic clients in `autogen-ext`.
+- **New move:** add a line to `MOVES` and a `case` to `Chair._play_move` in `model_un.py`.
+- **New tool for delegations:** wrap a function in `FunctionTool`, with a description that names its arguments, and add it to the `tools` param.
+- **Other LLM:** return any Concordia `LanguageModel` from `gemini_model()`, such as the OpenAI or Ollama wrappers in `concordia.contrib.language_models`.
 
 ## Known caveats
 
-- **AutoGen is in maintenance mode.** `autogen-core` 0.7.5 (September 2025) is the last feature release, and Microsoft points new projects to Microsoft Agent Framework. Agent Framework routes messages only along edges fixed when its workflow graph is built, which doesn't suit free one-to-one messaging plus broadcast, so this project stays on AutoGen Core.
-- **Gemini 3 thought signatures.** Gemini 3 models return a thought signature with each tool call and reject the next request if it isn't sent back. `autogen-ext` 0.7.5 drops it, so `gemini.py` patches the client to keep it. Remove the patch if you switch to a client that handles signatures itself.
+- **Tools and moves are JSON in plain text.** Concordia's language model interface is text in, text out, without native function calling. A malformed answer costs the delegation its turn, though it is told why.
 - **Agents' memories can drift.** What a delegation remembers is LLM-written and may contradict what was agreed. The Secretariat's record is the source of truth for drafts and votes.
-- **Cost grows with chattiness.** Private messages make each delegation think again, so 6 delegations can produce hundreds of LLM calls per session. Lower `max_hops` or the number of delegations to cut cost. `web_search` uses Gemini's Google Search grounding, which has its own quota.
-- **Resuming isn't wired up.** `runtime.save_state()` is written at the end, and delegations can reload it with `load_state`, but the Secretariat can't reload its record yet.
+- **Cost grows with chattiness.** Every private message makes its recipient act again, and each turn can add up to 5 tool calls. Lower `max_hops` or the number of delegations to cut cost. `web_search` uses Gemini's Google Search grounding, which has its own quota.
+- **Concordia is pinned to 2.4.0** (March 2026), the latest PyPI release. GitHub `main` has moved on and changes several of the APIs used here.
+- **Resumed runs restart step numbers** in `log.html`, because each run of the engine counts its own steps.
