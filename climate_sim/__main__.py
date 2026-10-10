@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument("--negotiation-turns", type=int, default=1)
     parser.add_argument("--offer-visibility", choices=["mixed", "public", "private"], default="mixed")
     parser.add_argument("--memory-length", type=int, default=100)
-    parser.add_argument("--bilateral-slots", type=int, default=2, help="bilateral slots before each later round; 0 disables")
+    parser.add_argument("--bilateral-slots", type=int, default=2, help="0 disables bilaterals before each later round; any other value enables them (no slots)")
     parser.add_argument("--bilateral-messages", type=int, default=8, help="message limit per bilateral conversation")
     parser.add_argument("--model", default=SimulationConfig.model_fields["default_model"].default)
     parser.add_argument("--agent-models", type=Path, help="JSON object mapping exact member IDs to Gemini model names")

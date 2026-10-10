@@ -364,7 +364,7 @@ def main():
     parser.add_argument("--message-budget", type=int, default=12, help="Messages per country before pausing; Continue renews the budget")
     parser.add_argument("--observers", nargs="*", choices=[o.value for o in ObserverId], default=[],
                         help="observer groups who join the bilaterals; no values means all three")
-    parser.add_argument("--bilateral-slots", type=int, default=2, help="bilateral slots after Round 1")
+    parser.add_argument("--bilateral-slots", type=int, default=2, help="0 disables bilaterals after Round 1; any other value enables them (no slots)")
     parser.add_argument("--bilateral-messages", type=int, default=8, help="message limit per bilateral conversation")
     args = parser.parse_args()
     if args.resume_live:

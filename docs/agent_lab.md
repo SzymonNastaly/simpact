@@ -90,7 +90,9 @@ The server binds to loopback and is a local researcher's viewer.
 
 ## Bilaterals
 
-Live Round 2 uses `climate_sim/allocator.py`: agents independently rank up to
+Round 2 uses `climate_sim/allocator.py`, live and in the batch runner: there are no rounds
+or slots. Every agent runs its own Concordia loop (Asynchronous engine) under one
+`ScheduledGameMaster`, so it is paired again as soon as it is free. Agents independently rank up to
 three next partners, the allocator reserves available pairs, and each private
 conversation progresses without waiting for others. Matching prefers cross-country
 and mutual requests, then ranked priority. Each agent may meet at most five distinct
@@ -101,11 +103,10 @@ updated reports. An empty plan opts out; completion also occurs when no eligible
 unmet partners remain. Pause finishes in-flight calls; Continue resets waiting
 clocks. Researcher views show queues and priorities; agents see availability and
 their own requests, never another agent's private plan. Saved conversations and
-reports restore from events and count toward the limit. The offline batch runner
-retains its configurable slot schedule in `climate_sim/bilaterals.py`.
+reports restore from events and count toward the limit. `--bilateral-slots 0` turns
+bilaterals off; any other value turns them on (the name predates the allocator).
 
-After every slot a neutral Gemini rapporteur summarizes it, and after the last slot three
-independent Gemini analysts each rate how cooperative every pair of delegations that talked
+Once every agent has finished, three independent Gemini analysts each rate how cooperative every pair of delegations that talked
 has been (-1 adversarial to +1 well coordinated); the game master averages them and keeps the
 spread. Both are researcher-only (owners `researcher`); agents never see them.
 

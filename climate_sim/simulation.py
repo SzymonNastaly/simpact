@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
+from .allocator import AgentAllocator
 from .bilaterals import ANALYSTS, Bilaterals, METRICS_STAGE, RELATIONS_STAGE, STAGES as BILATERAL_STAGES, SUMMARY_STAGE
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend, Rapporteur
 from .briefs import load_briefs, load_observers, DEFAULT_BRIEFS
@@ -13,7 +14,7 @@ from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
 from .meetings import MeetingHub, Participant
 from .memory import EventStore, write_json
 from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
-from .scenes import ScheduledGameMaster, run_scene, run_schedule
+from .scenes import ScheduledGameMaster, async_engine, run_async_schedule, run_scene
 from .voting import ranked_choice
 
 
@@ -88,11 +89,12 @@ class Simulation:
                                       for k, b in {**self.briefs, **self.observer_briefs}.items()}},
                           round=0, visibility="public")
 
-    def context(self, member: DelegationMember, stage: str | None = None) -> dict:
+    def context(self, member: DelegationMember, stage: str | None = None, memory: int | None = None) -> dict:
         # An explicit stage lets concurrent game-master loops build contexts without sharing self.stage.
         stage = stage or self.stage
         region = member.brief.delegation.value
-        events = self.store.view(member.name, region, self.config.memory_length, exclude_kinds={"agent_trace"})
+        events = self.store.view(member.name, region, memory or self.config.memory_length,
+                                 exclude_kinds={"agent_trace", "agent_call_failed"})
         # Keep full trajectories in the audit log; observations use bounded summaries.
         for event in events:
             if event["kind"] == "climate_outcome":
@@ -213,26 +215,44 @@ class Simulation:
         del self._candidates[region]
 
     def _bilaterals(self):
-        """One-to-one conversations between members (see bilaterals.py), partners chosen by the members."""
+        """One-to-one conversations between members, partners chosen by the members (see allocator.py).
+
+        No rounds or slots: every agent runs its own Concordia loop (Asynchronous engine) and is paired again
+        as soon as it is free. A failed agent call stops every loop and fails the run, as in other scenes."""
         if not self.config.bilateral_slots:
             return
         self.stage = "bilaterals"
-        self.bilaterals = Bilaterals(self.hub, self.store, round_number=self.current_round,
-                                     slots=self.config.bilateral_slots, message_limit=self.config.bilateral_messages)
+        self.bilaterals = AgentAllocator(self.hub, self.store, round_number=self.current_round,
+                                         message_limit=self.config.bilateral_messages)
         self.store.append("scene_started", {"stage": "bilaterals", "participants": list(self.agents),
-                          "engine": "concordia.simultaneous", "game_master": "scheduled"},
+                          "engine": "concordia.asynchronous", "game_master": "scheduled"},
                           round=self.current_round, visibility="individual", owners=["researcher"])
-        entities = [*self.agents.values(), self.rapporteur, *self.analysts]
+        entities = [*self.agents.values(), *self.analysts]
+        failures = []
+
+        def failed(name, stage, error):
+            failures.append(f"{name} failed during {stage}")
+            game_master.stopped = True
         game_master = ScheduledGameMaster("UN Secretary-General", {e.name: e for e in entities}, self.bilaterals,
-                                          store=self.store, context=self.bilateral_context)
-        run_schedule(game_master, entities)
+                                          store=self.store, context=self.bilateral_context, on_failure=failed,
+                                          concurrent=True)
+        run_async_schedule(game_master, entities, async_engine(sleep_time=.05))
+        if failures:
+            raise RuntimeError(failures[0])
         self.bilaterals = None
 
-    def bilateral_context(self, member, stage: str) -> dict:
+    def bilateral_context(self, member, stage: str, memory: int | None = None) -> dict:
         # The rapporteur and analysts are not delegates: they see the record, not a member's view of the summit.
         if stage in (SUMMARY_STAGE, RELATIONS_STAGE, METRICS_STAGE):
             return self.bilaterals.context(member.name, stage)
-        return self.context(member, stage)
+        context = self.context(member, stage, memory)
+        if isinstance(self.bilaterals, AgentAllocator):
+            region = member.brief.delegation.value
+            context.update(allocator_mode=True,
+                           team_members=[{"id": m.name, "role": m.role.value} for m in self.teams.get(region, [])],
+                           next_round_tasks=[task for e in context["events"] if e["kind"] == "next_round_plan"
+                                             for task in e["payload"]["assignments"] if task["agent_id"] == member.name])
+        return context
 
     def _press(self):
         """Observers react in public to the commitments and mock outcome just published."""

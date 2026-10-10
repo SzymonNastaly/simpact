@@ -445,8 +445,10 @@ class OfflineBackend:
     def _partner_requests(member: DelegationMember, context: dict) -> list[PartnerRequest]:
         """Two seeded picks from other delegations, counterparts first; observers court the delegates their group targets."""
         if member.role == Role.OBSERVER:
-            directory = [p for p in context["directory"] if p["id"] not in context["already_met"]]
-            return [PartnerRequest(member=OfflineBackend._observer_target(member, directory), topic=member.brief.goals[0][:300])]
+            directory = [p for p in context["directory"] if p["id"] not in context["already_met"] and p["role"] != Role.OBSERVER.value]
+            # Courted delegates first; once they are all taken, anyone left; otherwise nobody.
+            target = OfflineBackend._observer_target(member, directory) or (directory[0]["id"] if directory else None)
+            return [PartnerRequest(member=target, topic=member.brief.goals[0][:300])] if target else []
         own = member.brief.delegation.value
         others = sorted(p["id"] for p in context["directory"] if p["delegation"] != own
                         and p["role"] != Role.OBSERVER.value and p["id"] not in context["already_met"])
@@ -474,7 +476,8 @@ class OfflineBackend:
     def _observer_target(member: DelegationMember, directory: list[dict]) -> str:
         """A seeded pick among the delegates each group courts: heads for the lobby and the press, advisers for activists."""
         role = Role.CLIMATE if member.brief.delegation == ObserverId.CLIMATE_ACTIVISTS else Role.HEAD
-        return member.rng.choice(sorted(p["id"] for p in directory if p["role"] == role))
+        courted = sorted(p["id"] for p in directory if p["role"] == role)
+        return member.rng.choice(courted) if courted else None
 
     @staticmethod
     def _shared_positions(context: dict, delegation: DelegationId) -> dict[str, ClimateCommitment]:
