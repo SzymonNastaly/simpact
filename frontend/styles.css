@@ -274,3 +274,27 @@ dialog{overscroll-behavior:contain}
 .positions-scroll .viz-svg{min-width:510px;overflow:hidden}
 .viz-figure figcaption{flex-wrap:wrap}
 .viz-table{max-width:100%;overflow-x:auto}
+
+/* Markdown in agent text: thinking, messages, summaries */
+.md{white-space:normal}
+.md+.md{margin-top:.75em}
+.md p,.md li{white-space:normal}
+.md p{margin:0 0 .75em}
+.md>:last-child,.md li>:last-child{margin-bottom:0}
+.md ul,.md ol{margin:0 0 .75em;padding-left:1.4em}
+.md li{margin:.25em 0}
+.md li>ul,.md li>ol{margin:.25em 0 0}
+.md .md-heading{font-weight:650;margin:1.1em 0 .35em}
+.md>.md-heading:first-child{margin-top:0}
+.md .md-h1,.md .md-h2{font-size:1.08em}
+.md blockquote{border-left:3px solid var(--line);padding-left:12px;color:var(--muted);margin:0 0 .75em}
+.md hr{border:0;border-top:1px solid var(--line);margin:1em 0}
+.md a{color:var(--green)}
+.md pre{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:0 0 .75em;overflow:auto;white-space:pre}
+.md pre code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.6}
+:not(pre)>code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em;background:var(--soft);border:1px solid var(--line);border-radius:4px;padding:.05em .35em;overflow-wrap:anywhere}
+.viz-tip code{background:#ffffff1f;border-color:transparent;color:inherit}
+.md-table{overflow:auto;margin:0 0 .75em}
+.md-table table{border-collapse:collapse;font-size:.92em;line-height:1.6}
+.md-table th,.md-table td{text-align:left;vertical-align:top;padding:6px 14px 6px 0;border-bottom:1px solid var(--line)}
+.md-table th{font-weight:600}

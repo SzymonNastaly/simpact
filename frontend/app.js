@@ -25,6 +25,97 @@ window.SimpactCasting = (() => {
   return {person,avatar,flag,credits};
 })();
 
+// Markdown for agent text (thinking, messages, summaries). Everything is escaped first, so the
+// model's output can never inject HTML; only the markdown syntax below becomes markup.
+window.SimpactMarkdown = (() => {
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function inline(value) {
+    const kept = [];
+    const keep = html => `\u0000${kept.push(html) - 1}\u0000`;
+    let text = esc(value)
+      .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, ticks, code) => keep(`<code>${code.trim()}</code>`))
+      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => keep(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`));
+    text = text
+      .replace(/\*\*\*(?!\s)([^*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(?!\s)([^\n]+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^\w])__(?!\s)([^\n]+?)__(?!\w)/g, '$1<strong>$2</strong>')
+      .replace(/(^|[^*\w])\*(?![\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<em>$2</em>')
+      .replace(/(^|[^\w])_(?![\s_])([^_\n]*?[^\s_])_(?!\w)/g, '$1<em>$2</em>')
+      .replace(/~~(?!\s)([^~\n]+?)~~/g, '<del>$1</del>');
+    return text.replace(/\u0000(\d+)\u0000/g, (_, i) => kept[i]);
+  }
+  const LIST = /^(\s*)([-*+•]|\d+[.)])\s+(.*)$/;
+  const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+  const FENCE = /^\s*(```|~~~)/;
+  const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+  const QUOTE = /^\s{0,3}>\s?/;
+  const ROW = /^\s*\|.*\|\s*$/;
+  const SPLIT = /^\s*\|?(\s*:?-{3,}:?\s*\|)+(\s*:?-{3,}:?\s*)?\|?\s*$/;
+  const cells = line => line.trim().replace(/^\||\|$/g, '').split('|').map(cell => inline(cell.trim()));
+  // Nested lists follow indentation; ordered and bullet items each open their own list.
+  function list(lines) {
+    const items = lines.map(line => { const [, indent, marker, body] = line.match(LIST) || [, '', '-', line.trim()]; return {indent: indent.replace(/\t/g, '    ').length, ordered: /\d/.test(marker), start: parseInt(marker, 10), body}; });
+    let i = 0;
+    const build = () => {
+      const first = items[i], level = first.indent, tag = first.ordered ? 'ol' : 'ul';
+      let html = `<${tag}${first.ordered && first.start > 1 ? ` start="${first.start}"` : ''}>`;
+      while (i < items.length && items[i].indent >= level && !(items[i].indent === level && items[i].ordered !== first.ordered)) {
+        const item = items[i++];
+        html += `<li>${inline(item.body)}`;
+        while (i < items.length && items[i].indent > item.indent) html += build();
+        html += '</li>';
+      }
+      return `${html}</${tag}>`;
+    };
+    let html = '';
+    while (i < items.length) html += build();
+    return html;
+  }
+  function render(value) {
+    const lines = String(value ?? '').replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    for (let i = 0; i < lines.length;) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      if (FENCE.test(line)) {
+        const fence = line.trim().slice(0, 3), code = [];
+        for (i++; i < lines.length && !lines[i].trim().startsWith(fence); i++) code.push(lines[i]);
+        i++;
+        out.push(`<pre><code>${esc(code.join('\n'))}</code></pre>`);
+      } else if (HEADING.test(line)) {
+        const [, hashes, text] = line.match(HEADING);
+        out.push(`<p class="md-heading md-h${hashes.length}">${inline(text)}</p>`); i++;
+      } else if (RULE.test(line)) {
+        out.push('<hr>'); i++;
+      } else if (QUOTE.test(line)) {
+        const quoted = [];
+        while (i < lines.length && lines[i].trim() && QUOTE.test(lines[i])) quoted.push(lines[i++].replace(QUOTE, ''));
+        out.push(`<blockquote>${render(quoted.join('\n'))}</blockquote>`);
+      } else if (ROW.test(line) && SPLIT.test(lines[i + 1] || '')) {
+        const head = cells(line), rows = [];
+        for (i += 2; i < lines.length && ROW.test(lines[i]); i++) rows.push(cells(lines[i]));
+        out.push(`<div class="md-table"><table><thead><tr>${head.map(cell => `<th>${cell}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      } else if (LIST.test(line)) {
+        const items = [];
+        // Continuation lines join their item; a blank line between items keeps the list going.
+        while (i < lines.length) {
+          if (LIST.test(lines[i])) items.push(lines[i++]);
+          else if (lines[i].trim() && !FENCE.test(lines[i]) && !HEADING.test(lines[i]) && !QUOTE.test(lines[i]) && /^\s+/.test(lines[i])) items[items.length - 1] += ` ${lines[i++].trim()}`;
+          else if (!lines[i].trim() && LIST.test(lines[i + 1] || '')) i++;
+          else break;
+        }
+        out.push(list(items));
+      } else {
+        const para = [];
+        while (i < lines.length && lines[i].trim() && !FENCE.test(lines[i]) && !HEADING.test(lines[i]) && !QUOTE.test(lines[i]) && !LIST.test(lines[i]) && !RULE.test(lines[i])) para.push(lines[i++].trim());
+        out.push(`<p>${para.map(inline).join('<br>')}</p>`);
+      }
+    }
+    return out.join('');
+  }
+  return {render, inline, esc};
+})();
+
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
@@ -74,6 +165,8 @@ window.SimpactCasting = (() => {
   const initials = agent => roleName(agent).split(' ').map(word => word[0]).slice(0,2).join('').toUpperCase();
   const avatar = agent => window.SimpactCasting?.avatar(agent,roleClass(agent)) || `<span class="agent-avatar ${roleClass(agent)}" aria-hidden="true">${esc(initials(agent))}</span>`;
   const empty = text => `<p class="empty-state">${esc(text)}</p>`;
+  const md = text => window.SimpactMarkdown.render(text);
+  const mdi = text => window.SimpactMarkdown.inline(text);
   const countryById = id => session.countries.find(country => country.id === id);
   // Any agent, observers included: countries list their members, the bilaterals directory everyone.
   const agentById = id => session?.countries.flatMap(country => country.members).find(member => member.agent === id)
@@ -152,7 +245,7 @@ window.SimpactCasting = (() => {
     $('discussion').innerHTML = country.discussion.length ? country.discussion.map((event,index) => {
       const agent = country.members.find(member => member.agent === event.actor);
       const name = agent ? roleName(agent) : event.actor;
-      return `<article class="message">${agent ? avatar(agent) : ''}<div class="message-body"><button type="button" class="speaker" data-agent="${esc(event.actor)}"${event.trace_id ? ` data-trace="${esc(event.trace_id)}"` : ''}>${esc(name)}</button><span class="message-number">${String(index + 1).padStart(2,'0')}</span><p class="message-text">${esc(event.payload.speech)}</p></div></article>`;
+      return `<article class="message">${agent ? avatar(agent) : ''}<div class="message-body"><button type="button" class="speaker" data-agent="${esc(event.actor)}"${event.trace_id ? ` data-trace="${esc(event.trace_id)}"` : ''}>${esc(name)}</button><span class="message-number">${String(index + 1).padStart(2,'0')}</span><div class="message-text md">${md(event.payload.speech)}</div></div></article>`;
     }).join('') : empty(session.mode === 'live' ? 'Start the conversation. Agents will prepare, then respond to one another here.' : 'No Round 1 discussion was recorded for this delegation.');
   }
 
@@ -183,27 +276,20 @@ window.SimpactCasting = (() => {
     const summaries = country.summaries || [];
     const plan = country.action_plan;
     $('round-results').hidden = !summaries.length && !plan && !country.ending;
-    const bullets = (title,items) => items?.length ? `<div><h4>${esc(title)}</h4><ul>${items.map(text => `<li>${esc(text)}</li>`).join('')}</ul></div>` : '';
-    $('round-results').innerHTML = `${country.ending ? `<p class="closing-note">${esc(country.ending.reason)}</p>` : ''}
+    const bullets = (title,items) => items?.length ? `<div><h4>${esc(title)}</h4><ul>${items.map(text => `<li>${mdi(text)}</li>`).join('')}</ul></div>` : '';
+    $('round-results').innerHTML = `${country.ending ? `<div class="closing-note md">${md(country.ending.reason)}</div>` : ''}
       ${summaries.length ? `<h2>End of Round 1</h2><div class="round-summaries">${summaries.map(event => {
         const agent = country.members.find(member => member.agent === event.actor);
         const summary = event.payload.summary;
-        return `<article class="round-summary"><h3>${esc(agent ? roleName(agent) : event.actor)}</h3><p>${esc(summary.summary)}</p>${summary.agreements?.length || summary.unresolved_issues?.length || summary.responsibilities?.length ? `<details><summary>Agreements and remaining work</summary>${bullets('Agreements',summary.agreements)}${bullets('Unresolved issues',summary.unresolved_issues)}${bullets('My follow-up work',summary.responsibilities)}</details>` : ''}</article>`;
+        return `<article class="round-summary"><h3>${esc(agent ? roleName(agent) : event.actor)}</h3><div class="md">${md(summary.summary)}</div>${summary.agreements?.length || summary.unresolved_issues?.length || summary.responsibilities?.length ? `<details><summary>Agreements and remaining work</summary>${bullets('Agreements',summary.agreements)}${bullets('Unresolved issues',summary.unresolved_issues)}${bullets('My follow-up work',summary.responsibilities)}</details>` : ''}</article>`;
       }).join('')}</div>` : ''}
       ${plan ? `<h2>Action plan for Round ${esc(plan.next_round)}</h2><div class="action-plan"><table><thead><tr><th>Who</th><th>What to work on</th><th>Deliverable</th></tr></thead><tbody>${plan.assignments.map(task => {
         const agent = country.members.find(member => member.agent === task.agent_id);
-        return `<tr><th scope="row">${esc(agent ? roleName(agent) : task.agent_id)}</th><td>${esc(task.task)}</td><td>${esc(task.deliverable)}</td></tr>`;
+        return `<tr><th scope="row">${esc(agent ? roleName(agent) : task.agent_id)}</th><td>${mdi(task.task)}</td><td>${mdi(task.deliverable)}</td></tr>`;
       }).join('')}</tbody></table></div>` : ''}`;
   }
 
-  function thoughtText(value) {
-    const inline = text => esc(text).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-    return String(value).split(/\n\s*\n/).filter(Boolean).map(block => {
-      const lines = block.split('\n').filter(line => line.trim());
-      if (lines.every(line => /^\s*[-*]\s+/.test(line))) return `<ul>${lines.map(line => `<li>${inline(line.replace(/^\s*[-*]\s+/,''))}</li>`).join('')}</ul>`;
-      return `<p>${inline(block.replace(/^#{1,6}\s+/gm,''))}</p>`;
-    }).join('');
-  }
+  const thoughtText = value => `<div class="md">${md(value)}</div>`;
 
   function thinkingRounds(data) {
     const rounds = data.thinking_rounds || [{round:1,traces:(data.traces || []).map(event => {
@@ -303,10 +389,10 @@ window.SimpactCasting = (() => {
     const meetings = meetingsOf();
     if (!meetings.some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetings.find(m => m.status === 'active')?.id || meetings[0]?.id || null;
     const queue = bilaterals?.queue || [];
-    const agentRow = item => `<article class="queue-agent">${person(item.agent)}<span class="chip">${esc(item.state)} · ${item.partners_met}/5 people</span>${item.waiting_seconds ? `<small>Waiting ${esc(item.waiting_seconds)}s / 10s</small>` : ''}${item.priorities?.length ? `<ol>${item.priorities.map(request => `<li>${esc(fullName(request.member))}<small>${esc(request.topic)}</small></li>`).join('')}</ol>` : ''}</article>`;
+    const agentRow = item => `<article class="queue-agent">${person(item.agent)}<span class="chip">${esc(item.state)} · ${item.partners_met}/5 people</span>${item.waiting_seconds ? `<small>Waiting ${esc(item.waiting_seconds)}s / 10s</small>` : ''}${item.priorities?.length ? `<ol>${item.priorities.map(request => `<li>${esc(fullName(request.member))}<small>${mdi(request.topic)}</small></li>`).join('')}</ol>` : ''}</article>`;
     replaceContent('bilateral-slots', `<div class="agent-queues"><section><h2>Available agents</h2>${queue.filter(item => ['free','planning'].includes(item.state)).map(agentRow).join('') || empty('No agents waiting.')}</section><section><h2>Occupied agents</h2>${queue.filter(item => ['busy','updating'].includes(item.state)).map(agentRow).join('') || empty('No conversations in progress.')}</section></div>
       ${queue.some(item => item.state === 'finished') ? `<details id="finished-agents"><summary>Finished agents</summary>${queue.filter(item => item.state === 'finished').map(agentRow).join('')}</details>` : ''}
-      <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`);
+      <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${mdi(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`);
     renderMeeting();
     renderNetwork();
     chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));
@@ -335,11 +421,11 @@ window.SimpactCasting = (() => {
     const side = id => id === meeting.initiator ? 'left' : 'right';
     const asked = meeting.mutual ? 'Both asked for this meeting.' : `${fullName(meeting.initiator)} asked for this meeting.`;
     const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : `${fullName(meeting.closed_by)} ended the conversation.`;
-    replaceContent('bilateral-conversation', `<p class="eyebrow">ROUND 2 · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
+    replaceContent('bilateral-conversation', `<p class="eyebrow">ROUND 2 · PRIVATE</p><h2>${mdi(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
       <div class="meeting-agents">${[meeting.initiator,meeting.partner].map(id => { const agent = agentById(id); return `<button type="button" class="agent-button" data-agent="${esc(id)}">${agent ? avatar(agent) : ''}<span><strong>${esc(fullName(id))}</strong><small>All thinking traces</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`; }).join('')}</div>
-      <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><p class="message-text">${esc(message.text)}</p>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
+      <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><div class="message-text md">${md(message.text)}</div>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
       ${ended ? `<p class="conversation-note">${esc(ended)}</p>` : ''}
-      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><p>${esc(report.summary)}</p>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${thinkingFor(report.event_id,report)}</article>`).join('')}</div>` : ''}`);
+      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><div class="md">${md(report.summary)}</div>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${mdi(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${mdi(item)}</li>`).join('')}</ul>` : ''}${thinkingFor(report.event_id,report)}</article>`).join('')}</div>` : ''}`);
   }
 
   async function controlBilaterals() {

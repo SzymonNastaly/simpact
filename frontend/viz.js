@@ -9,6 +9,8 @@ window.SimpactViz = (() => {
   const ROLE_LABELS = {head_negotiator:'Head negotiator',economic_minister:'Economic minister',climate_adviser:'Climate adviser',observer:'Observer'};
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const roleKey = role => ROLE_ORDER.find(key => role === key || role.startsWith(key.split('_')[0])) || 'observer';
+  // Analyst text may carry markdown (backticks, bold); render it inline like the rest of the page.
+  const mdi = value => window.SimpactMarkdown ? window.SimpactMarkdown.inline(value) : esc(value);
   const fmt = (value, digits = 1) => Number(value).toLocaleString('en-US', {maximumFractionDigits: digits, minimumFractionDigits: digits});
   const money = value => `${value > 0 ? '+' : value < 0 ? '−' : ''}$${fmt(Math.abs(value), 0)}B`;
 
@@ -235,14 +237,14 @@ window.SimpactViz = (() => {
       const pair = lookup(a, b);
       if (!pair) { body += `<rect x="${x + 1}" y="${y + 1}" width="${cell - 2}" height="${cell - 2}" class="viz-cell-empty" data-tip="${esc(`<strong>${esc(nameOf(a))} · ${esc(nameOf(b))}</strong><br><span>No conversation between them</span>`)}"/>`; return; }
       const color = divergingColor(pair.score);
-      const tipText = `<strong>${esc(nameOf(a))} · ${esc(nameOf(b))}</strong><br>${pair.score >= 0 ? 'Cooperative' : 'Adversarial'} ${pair.score > 0 ? '+' : ''}${fmt(pair.score, 2)} · analysts ranged ${fmt(pair.low, 2)} to ${fmt(pair.high, 2)}<br>${pair.ratings.map(r => `<span>${esc(r.analyst)} (${r.score > 0 ? '+' : ''}${fmt(r.score, 2)}): ${esc(r.rationale)}</span>`).join('<br>')}`;
+      const tipText = `<strong>${esc(nameOf(a))} · ${esc(nameOf(b))}</strong><br>${pair.score >= 0 ? 'Cooperative' : 'Adversarial'} ${pair.score > 0 ? '+' : ''}${fmt(pair.score, 2)} · analysts ranged ${fmt(pair.low, 2)} to ${fmt(pair.high, 2)}<br>${pair.ratings.map(r => `<span>${esc(r.analyst)} (${r.score > 0 ? '+' : ''}${fmt(r.score, 2)}): ${mdi(r.rationale)}</span>`).join('<br>')}`;
       body += `<g tabindex="0" class="viz-dot" data-tip="${esc(tipText)}"><rect x="${x + 1}" y="${y + 1}" width="${cell - 2}" height="${cell - 2}" rx="4" fill="${color.fill}"/>${cell >= 40 ? `<text x="${x + cell / 2}" y="${y + cell / 2 + 4}" text-anchor="middle" class="viz-cell-value" fill="${color.ink}">${pair.score > 0 ? '+' : ''}${fmt(pair.score, 1)}</text>` : ''}</g>`;
     }));
     const ranked = [...pairs].sort((p, q) => q.score - p.score);
     const best = ranked[0], worst = ranked[ranked.length - 1];
     const describe = p => `${esc(nameOf(p.a))} · ${esc(nameOf(p.b))} (${p.score > 0 ? '+' : ''}${fmt(p.score, 2)})`;
     const legend = `<div class="viz-scale"><span>Adversarial −1</span><i></i><span>+1 Cooperative</span><span class="viz-scale-empty"><b></b>No conversation</span></div>`;
-    const table = `<details class="viz-table"><summary>Data table</summary><table><thead><tr><th>Delegations</th><th>Average</th><th>Range</th><th>Analysts’ reasons</th></tr></thead><tbody>${ranked.map(p => `<tr><td>${esc(nameOf(p.a))} · ${esc(nameOf(p.b))}</td><td>${fmt(p.score, 2)}</td><td>${fmt(p.low, 2)} to ${fmt(p.high, 2)}</td><td>${p.ratings.map(r => esc(r.rationale)).join('<br>')}</td></tr>`).join('')}</tbody></table></details>`;
+    const table = `<details class="viz-table"><summary>Data table</summary><table><thead><tr><th>Delegations</th><th>Average</th><th>Range</th><th>Analysts’ reasons</th></tr></thead><tbody>${ranked.map(p => `<tr><td>${esc(nameOf(p.a))} · ${esc(nameOf(p.b))}</td><td>${fmt(p.score, 2)}</td><td>${fmt(p.low, 2)} to ${fmt(p.high, 2)}</td><td>${p.ratings.map(r => mdi(r.rationale)).join('<br>')}</td></tr>`).join('')}</tbody></table></details>`;
     el.innerHTML = `<div class="viz-heading"><h2>How the delegations relate</h2><p>${analysts} independent Gemini analysts read every conversation between two countries and rated it from adversarial (−1) to well coordinated (+1); each cell is their average. Researcher only.</p></div>
       <p class="viz-callout">Most cooperative: <strong>${describe(best)}</strong>${pairs.length > 1 ? ` · ${worst.score < 0 ? 'Most adversarial' : 'Least cooperative'}: <strong>${describe(worst)}</strong>` : ''}</p>${legend}
       <figure class="viz-figure">${svg(width, height, 'Cooperation between delegations')}${body}</svg></figure>${table}`;
@@ -261,7 +263,7 @@ window.SimpactViz = (() => {
     el.hidden = false;
     const m = round.metrics, nameOf = id => (data.delegations || []).find(d => d.id === id)?.name || id;
     const evidence = ids => ids.filter(id => m.evidence?.[id]).map(id => `<br><span>“${esc(m.evidence[id].text.slice(0, 160))}${m.evidence[id].text.length > 160 ? '…' : ''}”</span>`).join('');
-    const ratingsTip = (title, entry) => `<strong>${esc(title)}: ${fmt(entry.score, 0)} / 100</strong><br><span>Analysts ranged ${fmt(entry.low, 0)}–${fmt(entry.high, 0)}</span>${entry.ratings.map(r => `<br>${esc(r.analyst)} · ${fmt(r.score, 0)}: ${esc(r.reason)}${evidence(r.evidence.slice(0, 1))}`).join('')}`;
+    const ratingsTip = (title, entry) => `<strong>${esc(title)}: ${fmt(entry.score, 0)} / 100</strong><br><span>Analysts ranged ${fmt(entry.low, 0)}–${fmt(entry.high, 0)}</span>${entry.ratings.map(r => `<br>${esc(r.analyst)} · ${fmt(r.score, 0)}: ${mdi(r.reason)}${evidence(r.evidence.slice(0, 1))}`).join('')}`;
     const tile = (key, title, caption, extra = '') => {
       const entry = m.global[key];
       return `<article class="viz-tile" tabindex="0" data-tip="${esc(ratingsTip(title, entry))}"><p class="viz-tile-label">${esc(title)}</p><p class="viz-tile-value">${fmt(entry.score, 0)}<span>/100</span></p>
@@ -292,7 +294,7 @@ window.SimpactViz = (() => {
       <div class="viz-tiles">${tile('burden_sharing', 'Burden sharing', 'Who carries the cost', financeNote)}${tile('trust', 'Trust', 'Do private and public positions match')}</div>
       <div class="viz-row${stacked ? '' : ' side'}">${COUNTRY_METRICS.map((metric, i) => column(metric, stacked || i === 0)).join('')}</div>
       <h3 class="viz-subhead">Emergence markers</h3>${markers}
-      <details class="viz-table"><summary>Analysts’ summaries of the round</summary>${m.summaries.map(x => `<p><strong>${esc(x.analyst)}</strong> · ${esc(x.summary)}</p>`).join('')}</details>${table}`;
+      <details class="viz-table"><summary>Analysts’ summaries of the round</summary>${m.summaries.map(x => `<p><strong>${esc(x.analyst)}</strong> · ${mdi(x.summary)}</p>`).join('')}</details>${table}`;
   }
 
   return {positions, movement, network, relations, metrics};
