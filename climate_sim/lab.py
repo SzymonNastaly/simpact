@@ -56,7 +56,8 @@ class Lab:
                 item["initial_preference"] = agent["initial_preference"]
             roster.append(item)
         rounds = {}
-        for round_number in sorted({e.round for e in self.events if e.kind == "commitments"}):
+        for round_number in sorted({e.round for e in self.events if e.round > 0 and
+                                   e.kind in {"commitments", "individual_preparation", "internal_speech"}}):
             round_events = [e for e in visible if e.round == round_number]
             teams = {}
             for region, brief in self.briefs.items():
@@ -112,16 +113,35 @@ class Lab:
         return result
 
     def round_one(self, scope: str = "public") -> dict:
-        replay = self.replay(scope)
-        first = replay["rounds"].get("1", {"teams": {}, "traces": []})
+        viewer = self.state["agents"].get(scope)
+        if scope not in {"researcher", "public"} and viewer is None:
+            raise PermissionError("Unknown viewer")
+        # The continuous board does not need a full multi-round metrics/trace replay.
+        visible = [e for e in self.events if e.round == 1 and e.kind == "internal_speech"
+                   and (scope == "researcher" or (e.visible_to(scope, viewer["delegation"])
+                        if viewer else e.visibility == "public"))]
+        trace_ids = {resolved: event.id for event in self.events
+                     if event.kind == "agent_trace" and event.round == 1
+                     and (scope == "researcher" or scope == event.actor)
+                     for resolved in event.payload.get("resolution_event_ids", [])}
         countries = []
-        for delegation in replay["delegations"]:
-            members = [a for a in replay["roster"] if a["delegation"] == delegation["id"]]
-            team = first["teams"].get(delegation["id"], {})
-            countries.append({"id": delegation["id"], "name": delegation["name"],
-                              "members": members, "discussion": team.get("speeches", [])})
-        return {"round": 1, "run": replay["run"], "backend": replay["config"]["backend"],
-                "countries": countries}
+        for region, brief in self.briefs.items():
+            members = []
+            for key, agent in self.state["agents"].items():
+                if agent["delegation"] != region:
+                    continue
+                item = {field: agent[field] for field in ("agent", "delegation", "role", "personality", "backend")}
+                if scope == "researcher" or scope == key:
+                    item.update(private_strategy=agent["private_strategy"], initial_preference=agent["initial_preference"])
+                members.append(item)
+            discussion = [e.model_dump(mode="json") for e in visible if e.owners == [region]]
+            for message in discussion:
+                if message["id"] in trace_ids:
+                    message["trace_id"] = trace_ids[message["id"]]
+            countries.append({"id": region, "name": brief.title,
+                              "members": members, "discussion": discussion})
+        return {"round": 1, "run": self.run_name, "backend": self.state["config"]["backend"],
+                "mode": "recorded", "countries": countries}
 
     def round_one_agent(self, agent_id: str, scope: str = "public") -> dict:
         first = self.round_one(scope)
@@ -133,7 +153,10 @@ class Lab:
                   if e.kind == "agent_trace" and e.round == 1 and e.actor == agent_id
                   and e.payload.get("stage") in {"prepare", "internal", "mandate", "vote", "announce"}
                   and (scope == "researcher" or scope == agent_id)]
-        return {"round": 1, "agent": agent, "traces": traces}
+        failures = [e.model_dump(mode="json") for e in self.events
+                    if e.kind == "agent_call_failed" and e.round == 1 and e.actor == agent_id
+                    and scope in {"researcher", agent_id}]
+        return {"round": 1, "agent": agent, "traces": traces, "failures": failures}
 
     def trace(self, event_id: str, scope: str) -> dict:
         member = self.state["agents"].get(scope)
@@ -276,15 +299,33 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, default=ROOT / "runs/climate-mvp-seed42")
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--live", action="store_true", help="Create a live Round 1 session; calls begin when Start is pressed")
+    parser.add_argument("--backend", choices=("gemini", "offline"), default="gemini")
+    parser.add_argument("--model", default="gemini-3.8-flash")
+    parser.add_argument("--thinking-level", choices=("low", "medium", "high"), default="medium")
+    parser.add_argument("--team-size", type=int, default=3)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--message-budget", type=int, default=12, help="Messages per country before pausing; Continue renews the budget")
     args = parser.parse_args()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%fZ")
-    lab = Lab(args.run, output=ROOT / "runs" / f"meeting-lab-{stamp}")
+    if args.live:
+        from .live import LiveLab
+        from .models import SimulationConfig
+        lab = LiveLab(SimulationConfig(seed=args.seed, team_size=args.team_size, backend=args.backend,
+                                      default_model=args.model), thinking_level=args.thinking_level,
+                      message_budget=args.message_budget, output=ROOT / "runs" / f"round-one-live-{stamp}")
+    else:
+        lab = Lab(args.run, output=ROOT / "runs" / f"meeting-lab-{stamp}")
     server = server_for(lab, args.port)
     print(f"Round 1 viewer: http://127.0.0.1:{server.server_address[1]}/", flush=True)
-    print("Recorded delegation discussions and agent perspectives. Opening the viewer makes no Gemini calls.", flush=True)
+    print("Live session: Start a country to generate messages." if args.live else "Recorded delegation discussions and agent perspectives.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        pass
+    finally:
+        if args.live:
+            lab.close()
         server.server_close()
 
 

@@ -262,6 +262,10 @@ def test_gemini_repairs_phase_errors_without_foreign_context():
     assert "requires a structured commitment" in requests[1]["contents"]
     assert all("FOREIGN_PRIVATE_SENTINEL" not in request["contents"] for request in requests)
     assert all(request["config"].response_mime_type == "application/json" for request in requests)
+    calls = backend.last_generation["calls"]
+    assert len(calls) == 2 and not calls[0]["accepted"] and calls[1]["accepted"]
+    assert "requires a structured commitment" in calls[0]["validation_error"]
+    assert calls[1]["input"] == requests[1]["contents"]
 
 
 def test_backend_error_payload_is_not_logged(caplog, capsys):

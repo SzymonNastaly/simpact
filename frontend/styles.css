@@ -47,7 +47,14 @@ h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(42px,6vw,64px);fo
 .conversation-heading{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:12px}
 .conversation-heading h2{font-family:Georgia,"Times New Roman",serif;font-size:25px;font-weight:400;letter-spacing:-.5px;margin:0}
 .conversation-heading>span{font-size:11px;color:var(--muted)}
-.discussion-turn{border-bottom:1px solid var(--line);padding:25px 0 12px;font-size:10px;text-transform:uppercase;letter-spacing:1.8px;color:var(--muted)}
+.live-controls{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:0 0 30px;padding:18px 20px;background:var(--soft);border-radius:10px}
+.live-controls p{font-size:13px;margin:0 0 5px}
+.live-controls small{font-size:11px;color:var(--muted)}
+.live-controls button{border:0;background:var(--green);color:var(--white);border-radius:7px;padding:11px 15px;font-size:12px;flex-shrink:0}
+.live-controls button:disabled{opacity:.6}
+.selected-decision{outline:2px solid #7d9670;outline-offset:2px}
+.call-record pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.65;max-height:350px;overflow:auto}
+@media(max-width:560px){.live-controls{align-items:flex-start;flex-direction:column}}
 .message{display:flex;gap:17px;padding:26px 0;border-bottom:1px solid var(--line)}
 .message-body{min-width:0;flex:1}
 .speaker{background:none;border:0;padding:0;font-size:12px;font-weight:650;text-align:left;line-height:1.4}

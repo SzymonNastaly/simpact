@@ -2,9 +2,25 @@
 
 ## Round 1 delegation discussions
 
-The frontend shows Round 1: choose a country to read its recorded delegation
-discussion, then select an agent to inspect its preparation notes, decision
-summaries, observations and actions. Country cards show the actual agent count.
+The frontend shows Round 1: choose a country and start its continuous delegation
+conversation. Every contribution makes a fresh Gemini call with the updated
+country transcript. Select a speaker to inspect that message's decision record,
+thinking level, token usage, provider thought summary when returned, and exact
+call input/output. Country cards show the actual agent count.
+
+```bash
+uv sync
+# GEMINI_API_KEY must be exported in this shell.
+uv run python -m climate_sim.lab --live --port 8766
+```
+
+Press Start within a country. Pause stops subsequent calls after the current
+response finishes. Each start permits 12 new messages; Continue renews the
+budget and keeps the same conversation and speaker order. The default model is
+`gemini-3.8-flash` with medium thinking. Opening the viewer makes no calls.
+`--backend offline` runs the same live loop with clearly labelled scripted agents.
+
+Saved simulations can also be viewed:
 
 ```bash
 uv sync
@@ -12,7 +28,7 @@ uv run python -m climate_sim --seed 42 --output runs/my-climate-run
 uv run python -m climate_sim.lab --run runs/my-climate-run --port 8766
 ```
 
-Open `http://127.0.0.1:8766/`. The viewer reads a saved session. Set
+Open `http://127.0.0.1:8766/`. Without `--live`, the viewer reads a saved session. Set
 `GEMINI_API_KEY` locally and add `--backend gemini` to generate Gemini agent runs
 with `gemini-3.8-flash`. Offline runs label their summaries as scripted policies.
 Private archives stay local.

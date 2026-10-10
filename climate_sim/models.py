@@ -206,6 +206,8 @@ class DecisionSummary(Model):
     summary: str = Field(min_length=1, max_length=800)
     intended_action: str = Field(min_length=1, max_length=300)
     evidence_event_ids: list[str] = Field(default_factory=list, max_length=8)
+    decision_type: Literal["ask", "challenge", "propose", "revise", "agree", "summarize"] | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class MeetingInvitation(Model):

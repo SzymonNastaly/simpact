@@ -1,10 +1,37 @@
-# Round 1 viewer
+# Round 1 conversations
 
 The frontend has three steps: choose a country, read its Round 1 discussion,
 and select an agent to inspect its own recorded perspective. There are no sidebars,
 meeting controls, round switches, mandate dashboards or climate charts.
 
 ## Open a session
+
+For a continuous Gemini conversation:
+
+```bash
+# Export GEMINI_API_KEY in the launching shell.
+uv run python -m climate_sim.lab --live --port 8766
+```
+
+Choose a country and press Start. Each agent prepares privately once, then
+contributes through a fresh Concordia observation/action cycle. Each new message
+is saved before the next call receives the full authorized country transcript.
+The next speaker rotates through the roster. Other countries' private data and
+other members' preparation are excluded from the input.
+
+Pause prevents subsequent calls; an in-flight response can still finish.
+`--message-budget 12` is the default per-country limit for each start. Continue
+renews that limit and retains prior messages, preferences, and the next speaker.
+`--thinking-level low|medium|high`, `--model`, `--team-size`, and `--seed` configure
+a new live session. `--backend offline` exercises the same loop using explicitly
+scripted policies. Only Round 1 runs in live mode.
+
+Live events, traces, failures and an atomic state checkpoint are saved under
+`runs/round-one-live-*/` with private file permissions. These can later be opened
+as a recorded session with `--run`; restarting the server creates a new live
+session, while Start/Continue resumes within the running session.
+
+For an existing saved simulation:
 
 ```bash
 uv sync
@@ -25,9 +52,18 @@ and `--agent-models` override it. Scripted runs are labelled in the viewer.
 - Country cards use the actual run roster, including non-default team sizes.
 - The discussion comes directly from Round 1 `internal_speech` events in order.
 - Agent details show that member's private preparation and starting proposal.
-- Decision records show recorded summaries, cited evidence, authorized
-  observations and the resulting action. They are summaries reported by the
-  agent or descriptions of the scripted policy, not raw provider thinking.
+- Clicking a message's speaker highlights the exact decision record behind it.
+  Agent buttons show that member's whole Round 1 record.
+- Decision records show summaries, intended actions, cited evidence, authorized
+  observations, preference changes and resulting commitments. Decision type and
+  confidence are self-reported by the agent when provided.
+- Gemini records include the requested thinking level, model/version, attempt
+  count, latency, reported input/output/thinking/total tokens, exact model inputs
+  and outputs, and provider thought summaries when returned. Thought summaries
+  are distinct from the agent's decision summary. Missing summaries and missing
+  usage remain explicit; thought signatures are never displayed or saved.
+- Failed calls pause that country, create a private failure record, and produce
+  no discussion message. Continue retries from the same speaker.
 - Older runs without `agent_trace` events show their preparation notes and
   explicitly identify the missing decision records.
 
@@ -59,3 +95,6 @@ node tests/test_agent_lab_ui.cjs
 The interaction test uses an actual saved simulation with five agents per country.
 It checks country navigation, dialogue, agent details, stale responses, escaped
 model output and loading failures. Browser visual verification is a separate check.
+Live tests check fresh contexts, exact message/trace links, pause during a blocked
+call, duplicate starts, continuation, country isolation, private archives, failure
+handling and real SDK serialization of thinking configuration and metadata.
