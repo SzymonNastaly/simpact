@@ -182,3 +182,9 @@ summary{font-size:12px;color:var(--green);cursor:pointer;line-height:1.5}
 
 #round-control{border:0;border-radius:8px;background:var(--green);color:white;padding:12px 20px;font-weight:600}
 #round-status{font-size:12px;color:var(--muted)}
+
+.agent-queues{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px}
+.agent-queues h2{font-size:19px}
+.queue-agent{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--white)}
+.queue-agent .person-name{display:block;margin:8px 0}.queue-agent small{display:block;color:var(--muted);font-size:11px;line-height:1.5}.queue-agent ol{padding-left:18px;font-size:12px;margin-bottom:0}.queue-agent li{margin:8px 0}
+@media(max-width:560px){.agent-queues{grid-template-columns:1fr}}

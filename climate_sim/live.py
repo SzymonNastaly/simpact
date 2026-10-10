@@ -2,7 +2,7 @@
 
 Every country's Round 1 is one long Concordia loop: a ScheduledGameMaster follows that country's
 RoundOneDiscussion (preparation, discussion, the head's closure, summaries, the action plan) and the
-engine runs it, one fresh context per action. Bilaterals run the same way once every country has
+engine runs it, one fresh context per action. Live bilaterals use a continuous allocator once every country has
 concluded. The viewer's Start and Pause drive each loop's StepController, and budgets and closures pause
 a loop between steps, so a pause lets the in-flight call finish. Game-master calls take the viewer lock;
 agent calls never hold it. No calls on page load.
@@ -10,6 +10,7 @@ agent calls never hold it. No calls on page load.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import threading
@@ -17,12 +18,13 @@ from typing import Callable
 
 from concordia.environment.step_controller import StepController
 
+from .allocator import AgentAllocator
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
 from .bilaterals import Bilaterals, SUMMARY_STAGE
 from .lab import Lab
 from .memory import Event
 from .models import ClimateCommitment, MemberAction, SimulationConfig
-from .scenes import ScheduledGameMaster, run_schedule
+from .scenes import ScheduledGameMaster, run_schedule, run_scene
 from .simulation import Simulation
 
 
@@ -162,8 +164,8 @@ class LiveLab(Lab):
         self.bilateral = {"active": False, "status": "idle", "thinking_agents": [], "error": None}
         self.sim.rapporteur.thinking_level, self.sim.rapporteur.include_thoughts = thinking_level, True
         if config.bilateral_slots:
-            self.sim.bilaterals = Bilaterals(self.sim.hub, self.sim.store, round_number=2,
-                slots=config.bilateral_slots, message_limit=config.bilateral_messages)
+            self.sim.bilaterals = AgentAllocator(self.sim.hub, self.sim.store, round_number=2,
+                message_limit=config.bilateral_messages)
         self._closed = False
         if saved:
             self.events[:] = [Event.model_validate_json(line) for line in (resume / "events.jsonl").read_text().splitlines()]
@@ -178,7 +180,7 @@ class LiveLab(Lab):
                 member.action_traces = [json.loads(json.dumps(e.payload)) for e in self.events
                                         if e.kind == "agent_trace" and e.actor == name]
             self.sim.hub.load(self.events)
-            if self.sim.bilaterals and any(e.kind == "bilateral_nominations" for e in self.events):
+            if self.sim.bilaterals and any(e.kind == "agent_partner_plan" for e in self.events):
                 self.bilateral["status"] = "completed" if self.sim.bilaterals.done else "paused"
         self.discussions = {region: RoundOneDiscussion(self.sim, region, self.controls[region],
                                                        lambda region=region: self._can_finish(region))
@@ -201,8 +203,59 @@ class LiveLab(Lab):
         for region, discussion in self.discussions.items():
             self._start_loop(region, discussion, self.sim.teams[region], self.controls[region], discussion.context)
         if self.sim.bilaterals:
-            self._start_loop("bilaterals", self.sim.bilaterals, [*self.sim.agents.values(), self.sim.rapporteur],
-                             self.bilateral, self._bilateral_context)
+            self.sim.bilaterals.reset_waits()
+            controller = StepController(start_paused=True)
+            thread = threading.Thread(target=self._allocator_loop, name="bilateral-allocator", daemon=True)
+            self.loops["bilaterals"] = (controller, thread)
+            thread.start()
+
+    def _allocator_loop(self):
+        """Dispatch independently; a slow conversation never holds up free agents or other pairs."""
+        schedule = self.sim.bilaterals
+        with ThreadPoolExecutor(max_workers=len(self.sim.agents)) as pool:
+            while True:
+                with self.condition:
+                    self.condition.wait_for(lambda: self._closed or self.bilateral['active'])
+                    if self._closed:
+                        return
+                    due = schedule.due()
+                    if schedule.done:
+                        self.bilateral.update(active=False, status='completed')
+                        self._changed()
+                        continue
+                    for stage, name in due:
+                        schedule.inflight.add(name)
+                        context = self._bilateral_context(self.sim.agents[name], stage)
+                        pool.submit(self._allocator_call, stage, name, context)
+                    self.bilateral.update(status='thinking' if schedule.inflight else 'queued',
+                                          thinking_agents=sorted(schedule.inflight))
+                    self._changed()
+                    self.condition.wait(timeout=.25)
+
+    def _allocator_call(self, stage, name, context):
+        member, schedule = self.sim.agents[name], self.sim.bilaterals
+        def resolve(actions):
+            with self.condition:
+                start = len(self.events)
+                schedule.resolve(stage, actions)
+                trace = member.action_traces[-1]
+                trace['resolution_event_ids'] = [e.id for e in self.events[start:] if e.actor == name]
+                self.sim.store.append('agent_trace', trace, round=2, visibility='individual', owners=[name], actor=name)
+        try:
+            run_scene(stage, [member], simultaneous=False, turns=1, context=lambda _:context, resolve=resolve)
+        except Exception as error:
+            with self.condition:
+                self.bilateral.update(active=False, status='error', error=f'{name} failed. Continue to retry.')
+                self.sim.store.append('agent_call_failed', {'stage':stage, 'error_type':type(error).__name__,
+                    'generation':getattr(member.backend, 'last_generation', None)}, round=2,
+                    visibility='individual', owners=[name], actor=name)
+        finally:
+            with self.condition:
+                schedule.inflight.discard(name)
+                self.bilateral['thinking_agents'] = sorted(schedule.inflight)
+                if not self.bilateral['active'] and self.bilateral['status'] not in {'error','completed'}:
+                    self.bilateral['status'] = 'pausing' if schedule.inflight else 'paused'
+                self._changed()
 
     def _start_loop(self, key: str, schedule, entities: list[DelegationMember], control: dict,
                     context: Callable[[DelegationMember, str], dict]):
@@ -273,6 +326,11 @@ class LiveLab(Lab):
         context = self.sim.context(member, stage)
         context["events"] = self.sim.store.view(member.name, member.brief.delegation.value, len(self.events) + 1,
                                               exclude_kinds={"agent_trace", "agent_call_failed"})
+        context['allocator_mode'] = True
+        region = member.brief.delegation.value
+        context['team_members'] = [{'id':m.name, 'role':m.role.value} for m in self.sim.teams.get(region, [])]
+        context['next_round_tasks'] = [task for e in context['events'] if e['kind'] == 'next_round_plan'
+                                      for task in e['payload']['assignments'] if task['agent_id'] == member.name]
         return context
 
     def _checkpoint(self):
@@ -307,8 +365,9 @@ class LiveLab(Lab):
             if scope == "researcher":
                 result["live"] = {**self.bilateral, "enabled": meetings is not None, "open": self._bilaterals_open(),
                     "concluded": sum(c["phase"] == "completed" for c in self.controls.values()), "countries": len(self.controls),
-                    "slot": min(meetings.slot, meetings.slots) if meetings else 0, "slots": self.sim.config.bilateral_slots,
+                    "allocator": True, "max_partners": 5, "wait_seconds": 10,
                     "message_limit": self.sim.config.bilateral_messages, "done": bool(meetings and meetings.done)}
+                result['queue'] = meetings.snapshot() if meetings else []
             return result
 
     def _bilaterals_open(self):
@@ -329,8 +388,9 @@ class LiveLab(Lab):
             if not self._bilaterals_open():
                 raise ValueError("Bilaterals open once every delegation has concluded Round 1")
             if meetings.done:
-                raise ValueError("Every bilateral slot is complete")
+                raise ValueError("Every agent has finished its conversation plan")
             if not control["active"]:
+                meetings.reset_waits()
                 control.update(active=True, error=None, status="thinking" if control["thinking_agents"] else "queued")
             controller.play()
         elif operation == "pause":
