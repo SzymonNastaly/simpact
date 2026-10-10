@@ -33,14 +33,14 @@ sessions. Use Brain memory-informed review and workspace
 capabilities when relevant. Brain semantic answers refer to a stored index, which
 may differ from current working-tree source.
 
-Use Graph query, def, neighbors, and impact for additional code discovery and
+Use Graph search, def, neighbors, and impact for additional code discovery and
 structural analysis. Useful locations from the brief do not require a redundant
-Graph query. Do not ask both tools the same question without an identified gap.
+Graph search. Do not ask both tools the same question without an identified gap.
 Use Graph diff, commit, and checkpoint for semantic comparisons of code revisions.
 Graph interactive queries normally inspect the working tree; Brain semantic answers
 refer to a stored index.
 
-    entire graph query --repo . --profile full --query "<task>"
+    entire graph search --repo . --profile full --query "<task>"
 
 Directly inspect source when the task already provides sufficient locations.
 Skip ceremonial queries for small edits and follow-up work with sufficient context.
