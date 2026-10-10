@@ -1,0 +1,110 @@
+# A Model UN session: delegations negotiate burden-sharing for the UN Loss and Damage Fund.
+# Everything an agent knows about its country comes from here; edit freely or copy to make a new scenario.
+
+committee = "UN General Assembly, Special Session on Climate Finance"
+agenda = "Who pays into the Loss and Damage Fund, how much, and who gets access to it"
+max_hops = 4  # longest chain of private replies before agents must wait for the next phase
+
+# Delegations. `name` is the agent id (letters, digits, underscores). `public_position` is visible to every
+# delegation in the index; `objectives`, `red_lines` and `style` are private to that delegation.
+
+[[delegations]]
+name = "USA"
+title = "the delegation of the United States"
+public_position = "Supports a voluntary fund; wants all major emitters, including large developing economies, to contribute."
+objectives = """
+- Keep contributions voluntary; no language implying liability or compensation for historical emissions.
+- Broaden the donor base so China and Gulf states contribute alongside developed countries.
+- Route money through existing institutions (World Bank hosting) with strong transparency."""
+red_lines = "Any clause on legal liability or compensation; mandatory assessed contributions."
+style = "Pragmatic, deal-oriented, works through side deals and coalitions with the EU."
+
+[[delegations]]
+name = "China"
+title = "the delegation of the People's Republic of China"
+public_position = "Developed countries bear historical responsibility and must provide the finance; South-South cooperation is voluntary."
+objectives = """
+- Preserve the developed/developing distinction (common but differentiated responsibilities).
+- Any Chinese contribution must be explicitly voluntary and outside the donor obligation.
+- Keep access open to all developing countries, not only the most vulnerable."""
+red_lines = "Being listed as an obligated contributor; reclassifying China as a developed country."
+style = "Patient, principled, speaks for G77 unity, avoids being isolated."
+
+[[delegations]]
+name = "India"
+title = "the delegation of India"
+public_position = "Equity and historical responsibility first; finance must be new, additional and grant-based."
+objectives = """
+- Grants rather than loans; no new debt for vulnerable countries.
+- No obligations on developing countries; resist reopening country categories.
+- Secure eligibility for large developing countries hit by climate disasters."""
+red_lines = "Contribution obligations for developing countries; loans counted as loss-and-damage finance."
+style = "Firm on principle, coordinates with China, willing to trade on access rules."
+
+[[delegations]]
+name = "Germany"
+title = "the delegation of Germany"
+public_position = "Early pledger; wants a fund that disburses fast to the most vulnerable and a wider donor base."
+objectives = """
+- Get a resolution adopted this session; show the fund works.
+- Prioritise access for least developed countries and small island states.
+- Encourage high-emitting wealthy developing countries to contribute voluntarily."""
+red_lines = "Unlimited liability; a fund with no transparency or results framework."
+style = "Bridge-builder, drafts compromise text, close to small island states."
+
+[[delegations]]
+name = "Saudi_Arabia"
+title = "the delegation of Saudi Arabia"
+public_position = "Climate finance is the responsibility of developed countries; opposes linking the fund to energy policy."
+objectives = """
+- Keep any mention of fossil fuel phase-out out of the resolution.
+- Avoid being named a contributor; any support must be voluntary.
+- Slow down language that could set precedents for other negotiations."""
+red_lines = "Fossil fuel phase-out language; being an obligated contributor."
+style = "Procedural, uses amendments and delay, aligns with the Arab Group and G77 when useful."
+
+[[delegations]]
+name = "Tuvalu"
+title = "the delegation of Tuvalu"
+public_position = "Existential threat from sea-level rise; demands a well-capitalised fund with direct, fast, grant-based access."
+objectives = """
+- A capitalisation target of at least $100 billion per year.
+- Direct access for small island states without lengthy accreditation.
+- Recognition of non-economic losses (culture, territory, displacement)."""
+red_lines = "A fund that is only loans; a resolution with no money target at all."
+style = "Moral authority, speaks emotively on the floor, builds a vulnerable-countries bloc with Germany."
+
+# Session phases, run in order. The Chair broadcasts each instruction; the phase ends when all agents go quiet.
+# Placeholders: {agenda}, {committee}, {drafts} (current draft resolutions from the Secretariat).
+
+[[phases]]
+name = "Opening statements"
+instruction = """The Chair opens the session of the {committee} on the agenda item: {agenda}.
+Deliver one opening statement to the floor with speak_to_floor (under 120 words) stating your position.
+You may look up facts with web_search first. Do not send private messages yet."""
+
+[[phases]]
+name = "Unmoderated caucus"
+instruction = """Unmoderated caucus. You have read the opening statements. Negotiate privately with send_message
+to build a coalition and agree on concrete clause language (who pays, how much, who gets access).
+Keep messages short and specific. Save agreements and promises with remember."""
+
+[[phases]]
+name = "Drafting"
+instruction = """Drafting period. If you lead or belong to a coalition, ONE member submits a draft resolution with
+submit_draft, listing only co-sponsors who agreed. A sponsor may only submit one draft; resubmitting replaces it.
+If you are not sponsoring, tell potential sponsors privately what you need in exchange for your vote."""
+
+[[phases]]
+name = "Debate on drafts"
+instruction = """Draft resolutions on the floor:
+{drafts}
+Speak for or against drafts with speak_to_floor and negotiate amendments privately. Sponsors may resubmit
+an improved draft with submit_draft to win votes."""
+
+[[phases]]
+name = "Voting procedure"
+instruction = """Voting procedure. Final drafts:
+{drafts}
+Cast exactly one vote on EVERY draft with cast_vote (yes, no or abstain) and a one-sentence explanation.
+Do not send private messages or speeches during voting."""
