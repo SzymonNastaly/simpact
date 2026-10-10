@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from .bilaterals import ANALYSTS, Bilaterals, RELATIONS_STAGE, STAGES as BILATERAL_STAGES, SUMMARY_STAGE
+from .bilaterals import ANALYSTS, Bilaterals, METRICS_STAGE, RELATIONS_STAGE, STAGES as BILATERAL_STAGES, SUMMARY_STAGE
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend, Rapporteur
 from .briefs import load_briefs, load_observers, DEFAULT_BRIEFS
 from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
@@ -230,7 +230,7 @@ class Simulation:
 
     def bilateral_context(self, member, stage: str) -> dict:
         # The rapporteur and analysts are not delegates: they see the record, not a member's view of the summit.
-        if stage in (SUMMARY_STAGE, RELATIONS_STAGE):
+        if stage in (SUMMARY_STAGE, RELATIONS_STAGE, METRICS_STAGE):
             return self.bilaterals.context(member.name, stage)
         return self.context(member, stage)
 

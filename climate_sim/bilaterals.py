@@ -12,7 +12,8 @@ A round of bilaterals has one or more slots. In each slot:
    summarizes the slot for the researcher. Agents never see it.
 
 After the last slot, several independent analysts each rate how cooperative every pair of delegations
-that talked has been (relations); the game master averages their ratings and keeps the spread.
+that talked has been (relations), then score every delegation and the summit on the agent metrics in
+judge.py (metrics); the game master averages both and keeps the spread.
 
 State is read from the event store and meeting registry rather than kept here, so a resumed live
 session continues where it stopped. Any subset of due actions can be resolved: the batch simulation
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import json
 
+from .judge import build_dossier, combine
 from .meetings import Meeting, MeetingHub
 from .memory import EventStore
 from .models import MemberAction, PartnerRequest
@@ -30,6 +32,7 @@ from .models import MemberAction, PartnerRequest
 STAGES = ("nominate", "bilateral", "debrief")
 SUMMARY_STAGE, RAPPORTEUR = "slot_summary", "rapporteur"
 RELATIONS_STAGE, ANALYSTS = "relations", ("analyst-1", "analyst-2", "analyst-3")
+METRICS_STAGE = "metrics"
 
 
 def pair_requests(nominations: dict[str, list[PartnerRequest]], delegation_of: dict[str, str],
@@ -93,8 +96,16 @@ class Bilaterals:
         return self.slot > self.slots
 
     @property
+    def relations_done(self) -> bool:
+        return bool(self._events("bilateral_relations")) or not self._pairs_to_rate()
+
+    @property
     def done(self) -> bool:
-        return self.slots_done and (bool(self._events("bilateral_relations")) or not self._pairs_to_rate())
+        # A round without any conversation has nothing to judge.
+        return self.slots_done and self.relations_done and (bool(self._events("agent_metrics")) or not self._meetings())
+
+    def _delegations(self) -> list[str]:
+        return list(dict.fromkeys(p.delegation for p in self.hub.participants.values() if p.role != "observer"))
 
     def _pairs_to_rate(self) -> list[list[str]]:
         """Pairs of delegations whose members talked, in a fixed order; observer groups are not rated."""
@@ -117,9 +128,12 @@ class Bilaterals:
         """(stage, member) for everyone who can act now."""
         if self.done:
             return []
-        if self.slots_done:
+        if self.slots_done and not self.relations_done:
             rated = {e.actor for e in self._events("bilateral_relation_rating")}
             return [(RELATIONS_STAGE, name) for name in ANALYSTS if name not in rated]
+        if self.slots_done:
+            scored = {e.actor for e in self._events("agent_metrics_rating")}
+            return [(METRICS_STAGE, name) for name in ANALYSTS if name not in scored]
         if not self.paired:
             nominated = self._nominations()
             return [("nominate", name) for name in self.hub.participants if name not in nominated]
@@ -135,6 +149,12 @@ class Bilaterals:
         return due
 
     def context(self, name: str, stage: str) -> dict:
+        if stage == METRICS_STAGE:
+            delegation_of = {p.id: p.delegation for p in self.hub.participants.values()}
+            return {"stage": stage, "round": self.round, "delegations": self._delegations(),
+                    "dossier": build_dossier(self.store.events, self.round),
+                    "meetings": [{"delegations": [delegation_of[m.initiator], delegation_of[m.partner]], "mutual": m.mutual}
+                                 for m in self._meetings()]}
         if stage == RELATIONS_STAGE:
             delegation_of = {p.id: p.delegation for p in self.hub.participants.values()}
             pairs = self._pairs_to_rate()
@@ -199,6 +219,9 @@ class Bilaterals:
                     self.hub.close(meeting.id, actor=name, reason="ended")
                 elif len(meeting.messages) >= self.message_limit:
                     self.hub.close(meeting.id, reason="limit")
+            elif stage == METRICS_STAGE:
+                self.store.append("agent_metrics_rating", json.loads(action.speech), round=self.round,
+                                  visibility="individual", owners=["researcher"], actor=name)
             elif stage == RELATIONS_STAGE:
                 ratings = json.loads(action.speech)["pairs"]
                 self.store.append("bilateral_relation_rating", {"pairs": ratings}, round=self.round,
@@ -218,6 +241,10 @@ class Bilaterals:
         self._finish_slot()
         if stage == RELATIONS_STAGE and self.slots_done and not self.due():
             self._combine_ratings()
+        if stage == METRICS_STAGE and self.slots_done and not self.due():
+            ratings = {e.actor: e.payload for e in self._events("agent_metrics_rating")}
+            self.store.append("agent_metrics", combine(ratings), round=self.round,
+                              visibility="individual", owners=["researcher"])
 
     def _combine_ratings(self):
         """Average the analysts' independent ratings per pair, keeping each rating and its reason."""

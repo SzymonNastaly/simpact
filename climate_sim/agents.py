@@ -764,7 +764,12 @@ class Rapporteur(entity.Entity):
     def act(self, action_spec: entity.ActionSpec = entity.DEFAULT_ACTION_SPEC) -> str:
         self.last_error = None
         try:
-            if self._context["stage"] == "relations":
+            if self._context["stage"] == "metrics":
+                from .judge import scripted_scores
+                scores, generation = self._gemini_metrics(self._context) if self.model else (
+                    scripted_scores(self._context["delegations"], self._context["meetings"], f"{self.name}:{self._context['round']}"), None)
+                summary = json.dumps(scores, ensure_ascii=False)
+            elif self._context["stage"] == "relations":
                 ratings, generation = self._gemini_relations(self._context) if self.model else (self._scripted_relations(self._context), None)
                 summary = json.dumps({"pairs": ratings}, ensure_ascii=False)
             else:
@@ -820,6 +825,22 @@ class Rapporteur(entity.Entity):
             return [{"a": p["a"], "b": p["b"], "score": float(p["score"]), "rationale": str(p["rationale"])[:400]} for p in pairs]
         return self._call(ANALYST_SYSTEM, context, schema, parse, temperature=.7)
 
+    def _gemini_metrics(self, context: dict) -> tuple[dict, dict]:
+        from .judge import COUNTRY_METRICS, GLOBAL_METRICS, JUDGE_SYSTEM, MARKERS, validate_scores
+        metric = {"type": "object", "required": ["score", "evidence", "reason"], "properties": {
+            "score": {"type": "number"}, "evidence": {"type": "array", "items": {"type": "string"}}, "reason": {"type": "string"}}}
+        schema = {"type": "object", "required": ["countries", "global", "summary", "markers"], "properties": {
+            "countries": {"type": "array", "items": {"type": "object", "required": ["delegation", *COUNTRY_METRICS],
+                          "properties": {"delegation": {"type": "string"}, **{name: metric for name in COUNTRY_METRICS}}}},
+            "global": {"type": "object", "required": list(GLOBAL_METRICS), "properties": {name: metric for name in GLOBAL_METRICS}},
+            "summary": {"type": "string"},
+            "markers": {"type": "array", "items": {"type": "object", "required": ["type", "delegations", "note"], "properties": {
+                "type": {"type": "string", "enum": list(MARKERS)}, "delegations": {"type": "array", "items": {"type": "string"}},
+                "evidence": {"type": "array", "items": {"type": "string"}}, "note": {"type": "string"}}}}}}
+        ids = {item["id"] for item in context["dossier"]}
+        return self._call(JUDGE_SYSTEM, context, schema, lambda output: validate_scores(json.loads(output), context["delegations"], ids),
+                          temperature=1.0, thinking_level="high")
+
     def _gemini(self, context: dict) -> tuple[str, dict]:
         schema = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}
 
@@ -830,16 +851,17 @@ class Rapporteur(entity.Entity):
             return summary
         return self._call(RAPPORTEUR_SYSTEM, context, schema, parse, temperature=.3)
 
-    def _call(self, system: str, context: dict, schema: dict, parse, *, temperature: float):
+    def _call(self, system: str, context: dict, schema: dict, parse, *, temperature: float, thinking_level: str | None = None):
         from google.genai import types
+        thinking_level = thinking_level or self.thinking_level
         prompt = json.dumps(context, ensure_ascii=False)
-        generation = {"model": self.model, "thinking_level": self.thinking_level,
+        generation = {"model": self.model, "thinking_level": thinking_level,
                       "thought_summaries_requested": self.include_thoughts, "system_instruction": system, "calls": []}
         for attempt in range(3):
             config = types.GenerateContentConfig(system_instruction=system, temperature=temperature,
                                                  response_mime_type="application/json", response_json_schema=schema)
-            if self.thinking_level or self.include_thoughts:
-                config.thinking_config = types.ThinkingConfig(thinking_level=self.thinking_level.upper() if self.thinking_level else None,
+            if thinking_level or self.include_thoughts:
+                config.thinking_config = types.ThinkingConfig(thinking_level=thinking_level.upper() if thinking_level else None,
                                                               include_thoughts=self.include_thoughts)
             call = {"attempt": attempt + 1, "input": prompt, "accepted": False}
             generation["calls"].append(call)

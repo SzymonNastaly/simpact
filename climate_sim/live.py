@@ -18,7 +18,7 @@ from typing import Callable
 from concordia.environment.step_controller import StepController
 
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
-from .bilaterals import Bilaterals, RELATIONS_STAGE, SUMMARY_STAGE
+from .bilaterals import Bilaterals, METRICS_STAGE, RELATIONS_STAGE, SUMMARY_STAGE
 from .lab import Lab
 from .memory import Event
 from .models import ClimateCommitment, MemberAction, SimulationConfig
@@ -269,7 +269,7 @@ class LiveLab(Lab):
 
     def _bilateral_context(self, member: DelegationMember, stage: str) -> dict:
         self.sim.current_round = 2
-        if stage in (SUMMARY_STAGE, RELATIONS_STAGE):
+        if stage in (SUMMARY_STAGE, RELATIONS_STAGE, METRICS_STAGE):
             return self.sim.bilateral_context(member, stage)
         context = self.sim.context(member, stage)
         context["events"] = self.sim.store.view(member.name, member.brief.delegation.value, len(self.events) + 1,
