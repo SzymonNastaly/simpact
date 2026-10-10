@@ -1,4 +1,4 @@
-"""Continuous Round 1 conversations. One worker, one fresh context per action.
+"""Continuous Round 1 conversations, then bilaterals. One worker, one fresh context per action.
 
 The worker never holds the viewer lock during network calls. A pause allows the
 in-flight action to finish, then prevents further calls. No calls on page load.
@@ -6,12 +6,14 @@ in-flight action to finish, then prevents further calls. No calls on page load.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import threading
 from typing import Callable
 
 from .agents import Backend, GeminiBackend, OfflineBackend
+from .bilaterals import Bilaterals
 from .lab import Lab
 from .memory import Event
 from .models import ClimateCommitment, SimulationConfig
@@ -31,7 +33,8 @@ class LiveLab(Lab):
             saved = json.loads((resume / "state.json").read_text())
             if "live" not in saved:
                 raise ValueError("Only a live Round 1 session can be resumed")
-            config = SimulationConfig.model_validate(saved["config"])
+            # Sessions saved before bilaterals carry settings that no longer exist.
+            config = SimulationConfig.model_validate({k: v for k, v in saved["config"].items() if k in SimulationConfig.model_fields})
             thinking_level = saved["live"].get("thinking_level", thinking_level)
             message_budget = saved["live"].get("message_budget", message_budget)
         if not 1 <= message_budget <= 100:
@@ -61,6 +64,11 @@ class LiveLab(Lab):
         self.cursor = {region: 0 for region in self.sim.teams}
         self._region_cursor = 0
         self._closed = False
+        # Bilaterals open once every delegation has concluded Round 1; they belong to Round 2.
+        self.bilateral = {"active": False, "status": "idle", "thinking_agents": [], "error": None}
+        if config.bilateral_slots:
+            self.sim.bilaterals = Bilaterals(self.sim.hub, self.sim.store, round_number=2,
+                slots=config.bilateral_slots, message_limit=config.bilateral_messages)
         if saved:
             self.events[:] = [Event.model_validate_json(line) for line in (resume / "events.jsonl").read_text().splitlines()]
             self.sim.store.path = resume / "events.jsonl"
@@ -86,6 +94,9 @@ class LiveLab(Lab):
                     control["phase"] = "plan" if len(self.summarized[region]) == len(self.sim.teams[region]) else "summaries"
                 control.update(active=False, thinking_agent=None, stage=None)
                 control["status"] = "completed" if control["phase"] == "completed" else "paused" if team_events else "idle"
+            self.sim.hub.load(self.events)
+            if self.sim.bilaterals and any(e.kind == "bilateral_nominations" for e in self.events):
+                self.bilateral["status"] = "completed" if self.sim.bilaterals.done else "paused"
             self.revision = saved["live"].get("revision", 0) + 1
         self._checkpoint()
         self.worker = threading.Thread(target=self._work, name="round-one-agent-loop", daemon=True)
@@ -95,7 +106,7 @@ class LiveLab(Lab):
         self.state = {"config": self.sim.config.model_dump(mode="json"),
                       "agents": {name: member.save_state() for name, member in self.sim.agents.items()},
                       "outcomes_by_round": {}, "commitments_by_round": {},
-                      "live": {"round": 1, "controls": self.controls, "revision": self.revision,
+                      "live": {"round": 1, "controls": self.controls, "bilaterals": self.bilateral, "revision": self.revision,
                                "thinking_level": self.thinking_level, "message_budget": self.message_budget}}
         if self.output:
             temporary = self.output / "state.json.tmp"
@@ -115,6 +126,107 @@ class LiveLab(Lab):
                     country["live"]["can_finish"] = self._can_finish(country["id"])
             return result
 
+    def bilaterals(self, scope="public"):
+        with self.lock:
+            result = super().bilaterals(scope)
+            result.update(mode="live", revision=self.revision)
+            meetings = self.sim.bilaterals
+            if scope == "researcher":
+                result["live"] = {**self.bilateral, "enabled": meetings is not None, "open": self._bilaterals_open(),
+                    "concluded": sum(c["phase"] == "completed" for c in self.controls.values()), "countries": len(self.controls),
+                    "slot": min(meetings.slot, meetings.slots) if meetings else 0, "slots": self.sim.config.bilateral_slots,
+                    "message_limit": self.sim.config.bilateral_messages, "done": bool(meetings and meetings.done)}
+            return result
+
+    def _bilaterals_open(self):
+        return all(c["phase"] == "completed" for c in self.controls.values())
+
+    def _act_bilaterals(self, operation):
+        control, meetings = self.bilateral, self.sim.bilaterals
+        if meetings is None:
+            raise ValueError("Bilaterals are turned off for this session")
+        if operation == "start":
+            if not self._bilaterals_open():
+                raise ValueError("Bilaterals open once every delegation has concluded Round 1")
+            if meetings.done:
+                raise ValueError("Every bilateral slot is complete")
+            if not control["active"]:
+                control.update(active=True, error=None, status="thinking" if control["thinking_agents"] else "queued")
+        elif operation == "pause":
+            control.update(active=False, status="pausing" if control["thinking_agents"] else "paused")
+        else:
+            raise ValueError("Use start or pause for bilaterals")
+        self.revision += 1
+        self._checkpoint()
+        self.condition.notify_all()
+        return dict(control)
+
+    def _bilateral_calls(self):
+        """Contexts for everyone due in this bilateral step; computed under the lock, before any network call."""
+        meetings = self.sim.bilaterals
+        due = meetings.due()
+        if not due:
+            self.bilateral.update(active=False, status="completed")
+            return None
+        self.sim.current_round = 2
+        calls = []
+        for stage, name in due:
+            member = self.sim.agents[name]
+            self.sim.stage = stage
+            context = self.sim.context(member)
+            context["events"] = self.sim.store.view(name, member.brief.delegation.value, len(self.events) + 1,
+                                                  exclude_kinds={"agent_trace", "agent_call_failed"})
+            calls.append((stage, member, context))
+        self.bilateral.update(status="thinking", thinking_agents=[name for _, name in due])
+        self.revision += 1
+        self._checkpoint()
+        return calls
+
+    def _run_bilaterals(self, calls):
+        """One step: every due call runs in parallel and resolves on its own, so one failure loses only its call."""
+        slot, failed = self.sim.bilaterals.slot, []
+        produced = {"nominate": "bilateral_nominations", "bilateral": "meeting_message", "debrief": "team_meeting_report"}
+
+        def call(stage, member, context):
+            def resolve(actions):
+                with self.condition:
+                    start = len(self.events)
+                    self.sim.bilaterals.resolve(stage, actions)
+                    trace = member.action_traces[-1]
+                    trace["resolution_event_ids"] = [e.id for e in self.events[start:]
+                                                     if e.actor == member.name and e.kind == produced[stage]]
+                    self.sim.store.append("agent_trace", trace, round=2, visibility="individual",
+                                          owners=[member.name], actor=member.name)
+                    self.revision += 1
+                    self._checkpoint()
+            try:
+                run_scene(stage, [member], simultaneous=False, turns=1, context=lambda _: context, resolve=resolve)
+            except Exception as error:
+                with self.condition:
+                    failed.append(member.name)
+                    self.sim.store.append("agent_call_failed", {"stage": stage, "error_type": type(error).__name__,
+                        "generation": getattr(member.backend, "last_generation", None)},
+                        round=2, visibility="individual", owners=[member.name], actor=member.name)
+
+        with ThreadPoolExecutor(max_workers=min(16, len(calls))) as pool:
+            list(pool.map(lambda item: call(*item), calls))
+        with self.condition:
+            control, meetings = self.bilateral, self.sim.bilaterals
+            control["thinking_agents"] = []
+            if failed:
+                control.update(active=False, status="error",
+                               error=f"{len(failed)} agent call(s) failed. Continue to retry them.")
+            elif meetings.done:
+                control.update(active=False, status="completed")
+            elif meetings.slot != slot:
+                # Stop between slots so the conversations can be read before the next round of requests.
+                control.update(active=False, status="slot_done")
+            else:
+                control["status"] = "queued" if control["active"] else "paused"
+            self.revision += 1
+            self._checkpoint()
+            self.condition.notify_all()
+
     def _can_finish(self, region):
         speakers = {e.actor for e in self.events if e.kind == "internal_speech"
                     and e.round == 1 and e.owners == [region]}
@@ -125,6 +237,8 @@ class LiveLab(Lab):
         with self.condition:
             if self._closed:
                 raise ValueError("Live session is closed")
+            if action.get("track") == "bilaterals":
+                return self._act_bilaterals(action.get("operation"))
             region = action.get("country")
             if region not in self.controls:
                 raise ValueError("Unknown country")
@@ -179,10 +293,18 @@ class LiveLab(Lab):
     def _work(self):
         while True:
             with self.condition:
-                self.condition.wait_for(lambda: self._closed or any(c["active"] for c in self.controls.values()))
+                self.condition.wait_for(lambda: self._closed or self.bilateral["active"]
+                                        or any(c["active"] for c in self.controls.values()))
                 if self._closed:
                     return
-                region, member, stage = self._next()
+                calls = self._bilateral_calls() if self.bilateral["active"] else None
+            if calls is not None:
+                self._run_bilaterals(calls)
+                continue
+            with self.condition:
+                if (step := self._next()) is None:
+                    continue
+                region, member, stage = step
                 self.sim.stage = stage
                 context = self.sim.context(member)
                 # Full scoped history: never truncate away messages the agent is responding to.
@@ -276,6 +398,7 @@ class LiveLab(Lab):
             self._closed = True
             for control in self.controls.values():
                 control["active"] = False
+            self.bilateral["active"] = False
             self.condition.notify_all()
         # A bounded join; an in-flight provider request may still be finishing.
         self.worker.join(timeout=1)

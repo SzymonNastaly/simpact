@@ -118,6 +118,47 @@ summary{font-size:12px;color:var(--green);cursor:pointer;line-height:1.5}
 .action-plan thead th{font-size:11px;color:var(--muted);font-weight:500}
 .action-plan tbody th{width:21%;font-weight:600}
 .action-plan td{width:39.5%;overflow-wrap:anywhere}
+.agent-avatar.observer,.member-dot.observer{background:#e8e3ef;color:#5d4f73}
+.bilaterals-entry{margin-top:18px;width:100%;display:flex;justify-content:space-between;align-items:center;gap:20px;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:26px;text-align:left;transition:transform .18s,border-color .18s,box-shadow .18s}
+.bilaterals-entry:hover{transform:translateY(-3px);border-color:#99ad97;box-shadow:0 8px 24px #26372f08}
+.bilaterals-entry>span{display:flex;flex-direction:column}
+.bilaterals-entry .eyebrow{margin-bottom:10px}
+.entry-title{font-family:Georgia,"Times New Roman",serif;font-size:27px;letter-spacing:-.6px;margin-bottom:9px}
+.entry-status{font-size:12px;color:var(--muted)}
+.bilateral-layout{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:36px;align-items:start}
+.bilateral-slot{margin-bottom:30px}
+.bilateral-slot h2,.bilateral-conversation h2{font-family:Georgia,"Times New Roman",serif;font-size:25px;font-weight:400;letter-spacing:-.5px;margin-bottom:6px}
+.slot-meta{font-size:12px;color:var(--muted);margin-bottom:14px}
+.meeting-card{width:100%;display:flex;flex-direction:column;gap:12px;background:var(--white);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:10px;text-align:left;transition:border-color .18s,background .18s}
+.meeting-card:hover{border-color:#99ad97}
+.meeting-card.selected{border-color:var(--green);background:var(--soft)}
+.meeting-people .agent-avatar{width:30px;height:30px;font-size:9px}
+.person-name{display:flex;flex-direction:column;min-width:0}
+.meeting-people{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto minmax(0,1fr);align-items:center;gap:8px}
+.person-name strong{font-size:12px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.person-name small{font-size:11px;color:var(--muted)}
+.meeting-link{color:#8a9988;font-size:14px}
+.meeting-topic{font-size:13px;line-height:1.5}
+.meeting-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:11px;color:var(--muted)}
+.chip{border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:10px;color:var(--ink)}
+.chip.live{border-color:#a3b591;color:var(--green)}
+.requests ul{padding-left:18px;margin:12px 0 0}
+.requests li{font-size:12px;line-height:1.7;margin-bottom:6px}
+.request-topic{color:var(--muted)}
+.bilateral-conversation{position:sticky;top:20px;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:28px}
+.bilateral-conversation:empty{display:none}
+.conversation-note{font-size:12px;color:var(--muted);line-height:1.6}
+.bilateral-messages{display:flex;flex-direction:column;gap:14px;margin:24px 0}
+.bubble{display:flex;gap:12px;max-width:88%}
+.bubble.right{align-self:flex-end;flex-direction:row-reverse;text-align:right}
+.bubble .agent-avatar{width:30px;height:30px;font-size:9px}
+.bubble-body{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.bubble.right .bubble-body{background:var(--soft)}
+.bubble .message-text{font-size:14px;line-height:1.7;margin-top:6px;text-align:left}
+.reports-title{font-size:11px;text-transform:uppercase;letter-spacing:1.3px;font-weight:650;margin:30px 0 4px}
+.meeting-reports .round-summary h4{font-size:12px;margin:14px 0 6px}
+.meeting-reports ul{padding-left:20px;margin:0}
+@media(max-width:850px){.bilateral-layout{grid-template-columns:1fr}.bilateral-conversation{position:static}}
 @media(max-width:850px){.country-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.masthead{padding:25px 28px}main{padding:35px 28px 60px}.page-footer{padding:22px 28px}.agent-button{min-width:180px}}
 @media(max-width:560px){.masthead{padding:23px 20px}.wordmark{font-size:23px}main{padding:27px 20px 55px}.intro{margin-bottom:30px}.lead{font-size:15px}.country-grid{grid-template-columns:1fr;gap:12px}.country-card{min-height:170px;padding:22px;position:relative}.country-card-top{margin-bottom:17px}.country-name{font-size:27px}.country-meta{margin-bottom:0}.member-dots{position:absolute;bottom:25px;right:22px;max-width:105px;flex-wrap:wrap}.country-heading h1{letter-spacing:-1.5px}.agent-strip{flex-direction:column;gap:8px;margin-bottom:32px}.agent-button{padding:13px 16px;min-width:0}.message{gap:12px;padding:22px 0}.message-text{font-size:14px;line-height:1.8}.message .agent-avatar{width:30px;height:30px;font-size:9px}.message-number{margin-left:7px}.page-footer{padding:20px}.dialog-heading{padding:25px 22px}.dialog-heading h2{font-size:27px}.agent-details{padding:25px 22px}.decision{padding:17px}.proposal{gap:10px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}

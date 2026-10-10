@@ -17,11 +17,12 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 
 from .agents import policy_distance
+from .bilaterals import STAGES as BILATERAL_STAGES
 from .briefs import load_briefs, load_observers
 from .meetings import fold_meetings
 from .memory import Event
 from .metrics import dispersion
-from .models import ClimateCommitment
+from .models import ClimateCommitment, ObserverId
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "frontend"
@@ -148,27 +149,74 @@ class Lab:
         first = self.round_one(scope)
         agent = next((a for country in first["countries"] for a in country["members"]
                       if a["agent"] == agent_id), None)
+        saved = self.state["agents"].get(agent_id)
+        if agent is None and saved and saved["role"] == "observer":
+            # Observers have no Round 1 team; they appear in bilaterals.
+            agent = {field: saved[field] for field in ("agent", "delegation", "role", "personality", "backend")}
         if agent is None:
             raise PermissionError("Unknown agent")
+        round_one_stages = {"prepare", "internal", "mandate", "vote", "announce", "summary", "plan"}
         traces = [self.trace(e.id, scope) for e in self.events
-                  if e.kind == "agent_trace" and e.round == 1 and e.actor == agent_id
-                  and e.payload.get("stage") in {"prepare", "internal", "mandate", "vote", "announce", "summary", "plan"}
+                  if e.kind == "agent_trace" and e.actor == agent_id
+                  and ((e.round == 1 and e.payload.get("stage") in round_one_stages) or e.payload.get("stage") in BILATERAL_STAGES)
                   and (scope == "researcher" or scope == agent_id)]
         failures = [e.model_dump(mode="json") for e in self.events
-                    if e.kind == "agent_call_failed" and e.round == 1 and e.actor == agent_id
+                    if e.kind == "agent_call_failed" and e.actor == agent_id
+                    and (e.round == 1 or e.payload.get("stage") in BILATERAL_STAGES)
                     and scope in {"researcher", agent_id}]
-        thinking = []
+        groups: dict[tuple, list] = {}
         for event in traces:
             payload = event["payload"]
             calls = payload.get("generation", {}).get("calls", [])
             accepted = next((call for call in reversed(calls) if call.get("accepted")), {})
             thoughts = accepted.get("thought_summaries", []) if accepted.get("attempt", 1) == 1 else []
             summary = payload.get("decision_summary") or {}
-            thinking.append({"id": event["id"], "stage": payload["stage"],
+            key = (event["round"], "Bilaterals") if payload["stage"] in BILATERAL_STAGES else (1, None)
+            groups.setdefault(key, []).append({"id": event["id"], "stage": payload["stage"],
                 "thoughts": thoughts or ([summary["summary"]] if summary.get("summary") else []),
                 "source": "provider_summary" if thoughts else payload.get("summary_source", "not_recorded")})
+        bilateral_rounds = sum(title == "Bilaterals" for _, title in groups)
+        thinking_rounds = [{"round": number, "traces": items, "title": None if title is None else
+                            ("Bilaterals" if bilateral_rounds == 1 else f"Bilaterals before Round {number}")}
+                           for (number, title), items in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1] or ""))]
         return {"round": 1, "agent": agent, "traces": traces, "failures": failures,
-                "thinking_rounds": [{"round": 1, "traces": thinking}]}
+                "thinking_rounds": thinking_rounds or [{"round": 1, "traces": []}]}
+
+    def participant_directory(self) -> list[dict]:
+        names = {**{k: b.title for k, b in self.briefs.items()}, **{k: b.title for k, b in self.observer_briefs.items()}}
+        return [{"agent": key, "delegation": a["delegation"], "delegation_name": names.get(a["delegation"], a["delegation"]),
+                 "role": a["role"]} for key, a in self.state["agents"].items()]
+
+    def bilaterals(self, scope: str = "public") -> dict:
+        """Every bilateral the viewer may see, by round and slot, with links to the decision traces behind each message."""
+        researcher = scope == "researcher"
+        viewer = self.state["agents"].get(scope)
+        if not researcher and scope != "public" and viewer is None:
+            raise PermissionError("Unknown viewer")
+        visible = [e for e in self.events if researcher or (viewer and e.visible_to(scope, viewer["delegation"]))]
+        traces = {resolved: e.id for e in self.events if e.kind == "agent_trace" and (researcher or scope == e.actor)
+                  for resolved in e.payload.get("resolution_event_ids", [])}
+        rounds: dict[int, dict[int, dict]] = {}
+        slot_of = lambda number, slot: rounds.setdefault(number, {}).setdefault(slot, {
+            "slot": slot, "nominations": {}, "unmatched": [], "paired": False, "finished": False, "meetings": []})
+        for event in visible:
+            if event.kind == "bilateral_nominations":
+                slot_of(event.round, event.payload["slot"])["nominations"][event.actor] = {
+                    "requests": event.payload["requests"], "trace_id": traces.get(event.id)}
+            elif event.kind == "bilateral_pairing":
+                slot = slot_of(event.round, event.payload["slot"])
+                slot.update(paired=True, unmatched=event.payload["unmatched"])
+            elif event.kind == "bilateral_slot_finished":
+                slot_of(event.round, event.payload["slot"])["finished"] = True
+        for meeting in fold_meetings(visible).values():
+            for message in meeting["messages"]:
+                message["trace_id"] = traces.get(message["event_id"])
+            for report in meeting["reports"].values():
+                report["trace_id"] = traces.get(report["event_id"])
+            slot_of(meeting["round"], meeting["slot"])["meetings"].append(meeting)
+        return {"mode": "recorded", "run": self.run_name, "backend": self.state["config"]["backend"],
+                "participants": self.participant_directory(),
+                "rounds": [{"round": number, "slots": [slots[k] for k in sorted(slots)]} for number, slots in sorted(rounds.items())]}
 
     def trace(self, event_id: str, scope: str) -> dict:
         member = self.state["agents"].get(scope)
@@ -222,6 +270,8 @@ def server_for(lab: Lab, port: int) -> ThreadingHTTPServer:
                         if parse_qs(parsed.query).get("view") == ["thinking"]:
                             data = {"round": data["round"], "thinking_rounds": data["thinking_rounds"]}
                         return self.send_json(200, data)
+                    if parsed.path == "/api/bilaterals":
+                        return self.send_json(200, lab.bilaterals(scope))
                     if parsed.path == "/api/trace":
                         event_id = parse_qs(parsed.query).get("id", [""])[0]
                         return self.send_json(200, lab.trace(event_id, scope))
@@ -272,6 +322,10 @@ def main():
     parser.add_argument("--world", choices=("six", "eight"), default="six", help="eight adds Brazil and Saudi Arabia to live Round 1")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--message-budget", type=int, default=12, help="Messages per country before pausing; Continue renews the budget")
+    parser.add_argument("--observers", nargs="*", choices=[o.value for o in ObserverId], default=[],
+                        help="observer groups who join the bilaterals; no values means all three")
+    parser.add_argument("--bilateral-slots", type=int, default=2, help="bilateral slots after Round 1")
+    parser.add_argument("--bilateral-messages", type=int, default=8, help="message limit per bilateral conversation")
     args = parser.parse_args()
     if args.resume_live:
         args.live = True
@@ -279,8 +333,12 @@ def main():
     if args.live:
         from .live import LiveLab
         from .models import SimulationConfig
+        import sys
+        observers = args.observers if args.observers or "--observers" not in sys.argv else list(ObserverId)
         lab = LiveLab(SimulationConfig(seed=args.seed, team_size=args.team_size, backend=args.backend,
-                                      default_model=args.model, world=args.world), thinking_level=args.thinking_level,
+                                      default_model=args.model, world=args.world, observers=observers,
+                                      bilateral_slots=args.bilateral_slots, bilateral_messages=args.bilateral_messages),
+                      thinking_level=args.thinking_level,
                       message_budget=args.message_budget, resume=args.resume_live,
                       output=None if args.resume_live else ROOT / "runs" / f"round-one-live-{stamp}")
     else:

@@ -30,7 +30,7 @@ def test_agent_details_have_only_that_members_first_round_traces(lab):
     data = lab.round_one_agent(agent_id, "researcher")
     assert data["agent"]["private_strategy"]
     assert data["traces"]
-    assert all(t["actor"] == agent_id and t["round"] == 1 for t in data["traces"])
+    assert all(t["actor"] == agent_id and (t["round"] == 1 or t["payload"]["stage"] in ("nominate", "bilateral", "debrief")) for t in data["traces"])
     assert all(t["payload"]["stage"] in {"prepare", "internal", "mandate", "vote", "announce"}
                for t in data["traces"])
     assert all(t["payload"]["decision_summary"] for t in data["traces"])

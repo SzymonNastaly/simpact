@@ -26,6 +26,13 @@ every member for Round 2. These appear below the discussion. Completed meetings
 stay closed. `--resume-live runs/round-one-live-...` restores an existing session
 with its conversations and closing progress, initially paused.
 
+Once every delegation has concluded Round 1, **Bilaterals** opens below the
+country cards: every agent names who it wants to talk to, pairs across countries
+are matched first, each pair talks privately one to one, and both sides report
+back to their own team. Each Start runs one slot (`--bilateral-slots 2`,
+`--bilateral-messages 8`); `--observers` lets the activists, the lobby and
+journalists take part.
+
 Saved simulations can also be viewed:
 
 ```bash
