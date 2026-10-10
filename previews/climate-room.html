@@ -1,0 +1,257 @@
+<div id="simpact-climate-room">
+  <style>
+    #simpact-climate-room {
+      --room-bg: light-dark(#f6f7f5, #121a17);
+      --room-panel: light-dark(#ffffff, #1b2520);
+      --room-ink: light-dark(#19332b, #e6f0ea);
+      --room-muted: light-dark(#63756c, #a3b7ac);
+      --room-line: light-dark(#e2e8e2, #334339);
+      --room-green: light-dark(#26674c, #9bd5b3);
+      --room-soft: light-dark(#eaf3ec, #263e2e);
+      --room-amber: light-dark(#81511b, #efca8e);
+      --room-amber-bg: light-dark(#fff3dc, #3b3021);
+      color-scheme: light dark;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--room-ink);
+      background: var(--room-bg);
+      border-radius: 16px;
+      overflow: hidden;
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: left;
+    }
+    #simpact-climate-room * { box-sizing: border-box; }
+    #simpact-climate-room button { font: inherit; cursor: pointer; color: inherit; }
+    #simpact-climate-room button:focus-visible { outline: 3px solid var(--room-green); outline-offset: 3px; }
+    #simpact-climate-room .room-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 24px; background: var(--room-panel); border-bottom: 1px solid var(--room-line); flex-wrap: wrap; }
+    #simpact-climate-room .room-brand { display: flex; align-items: center; gap: 9px; font-size: 18px; letter-spacing: -.6px; font-weight: 500; }
+    #simpact-climate-room .room-brandmark { width: 28px; height: 28px; display: grid; place-items: center; background: var(--room-green); color: var(--room-panel); border-radius: 9px; }
+    #simpact-climate-room .room-brandmark svg { width: 19px; height: 19px; }
+    #simpact-climate-room .room-label { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--room-muted); text-transform: uppercase; letter-spacing: .7px; }
+    #simpact-climate-room .room-dot { width: 6px; height: 6px; background: var(--room-green); border-radius: 50%; }
+    #simpact-climate-room .room-topmeta { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--room-muted); }
+    #simpact-climate-room .room-topmeta span:last-child { padding: 4px 9px; border: 1px solid var(--room-line); border-radius: 6px; }
+    #simpact-climate-room .room-main { padding: 25px 24px 20px; }
+    #simpact-climate-room .room-heading { display: flex; justify-content: space-between; gap: 18px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+    #simpact-climate-room h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(27px, 4vw, 36px); line-height: 1.2; margin: 6px 0; letter-spacing: -.9px; }
+    #simpact-climate-room h2 { font-size: 15px; font-weight: 500; margin: 0; line-height: 1.4; }
+    #simpact-climate-room h3 { font-weight: 500; font-size: 14px; margin: 0; }
+    #simpact-climate-room p { margin: 0; }
+    #simpact-climate-room .room-subtitle { color: var(--room-muted); font-size: 12px; }
+    #simpact-climate-room .room-rounds { display: flex; background: var(--room-panel); border: 1px solid var(--room-line); border-radius: 8px; padding: 4px; gap: 3px; }
+    #simpact-climate-room .room-rounds button { border: 0; background: transparent; border-radius: 5px; padding: 8px 12px; font-size: 12px; }
+    #simpact-climate-room .room-rounds button[aria-pressed="true"] { background: var(--room-ink); color: var(--room-panel); }
+    #simpact-climate-room .room-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--room-panel); border: 1px solid var(--room-line); border-radius: 11px; margin-bottom: 22px; }
+    #simpact-climate-room .room-stat { padding: 15px 18px; }
+    #simpact-climate-room .room-stat + .room-stat { border-left: 1px solid var(--room-line); }
+    #simpact-climate-room .room-statlabel { color: var(--room-muted); font-size: 11px; margin-bottom: 4px; }
+    #simpact-climate-room .room-statvalue { font-size: 28px; font-weight: 500; line-height: 1.2; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+    #simpact-climate-room .room-statvalue small { font-size: 13px; letter-spacing: 0; color: var(--room-muted); font-weight: 400; }
+    #simpact-climate-room .room-statnote { margin-top: 5px; font-size: 11px; color: var(--room-muted); }
+    #simpact-climate-room .room-mock { display: inline-block; background: var(--room-amber-bg); color: var(--room-amber); padding: 2px 5px; font-size: 10px; border-radius: 4px; margin-left: 5px; }
+    #simpact-climate-room .room-nav { display: flex; gap: 22px; border-bottom: 1px solid var(--room-line); margin-bottom: 20px; }
+    #simpact-climate-room .room-nav button { border: 0; border-bottom: 2px solid transparent; background: transparent; font-size: 12px; padding: 0 0 10px; color: var(--room-muted); }
+    #simpact-climate-room .room-nav button[aria-pressed="true"] { color: var(--room-green); border-bottom-color: var(--room-green); }
+    #simpact-climate-room .room-sectionhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+    #simpact-climate-room .room-sectionhead span { font-size: 11px; color: var(--room-muted); }
+    #simpact-climate-room .room-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    #simpact-climate-room .room-country { padding: 15px; background: var(--room-panel); border: 1px solid var(--room-line); border-radius: 10px; text-align: left; min-width: 0; transition: background 120ms ease; }
+    #simpact-climate-room .room-country[aria-pressed="true"] { background: var(--room-soft); border-color: var(--room-green); }
+    #simpact-climate-room .room-country-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+    #simpact-climate-room .room-country-code { font-size: 11px; font-weight: 500; letter-spacing: .8px; border: 1px solid var(--room-line); border-radius: 5px; padding: 3px 7px; background: var(--room-panel); }
+    #simpact-climate-room .room-check { font-size: 11px; color: var(--room-green); }
+    #simpact-climate-room .room-country-name { display: block; font-size: 13px; font-weight: 500; min-height: 40px; line-height: 1.4; }
+    #simpact-climate-room .room-country-metric { display: block; font-size: 22px; letter-spacing: -.5px; margin: 8px 0 3px; font-variant-numeric: tabular-nums; }
+    #simpact-climate-room .room-country-metric small { font-size: 10px; color: var(--room-muted); letter-spacing: 0; }
+    #simpact-climate-room .room-country-bottom { display: flex; justify-content: space-between; align-items: center; gap: 5px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--room-line); }
+    #simpact-climate-room .room-avatars { display: flex; }
+    #simpact-climate-room .room-avatar { display: grid; place-items: center; background: var(--room-soft); border: 1px solid var(--room-panel); color: var(--room-green); width: 22px; height: 22px; border-radius: 50%; font-size: 9px; }
+    #simpact-climate-room .room-avatar + .room-avatar { margin-left: -4px; }
+    #simpact-climate-room .room-finance { font-size: 10px; color: var(--room-muted); font-variant-numeric: tabular-nums; }
+    #simpact-climate-room .room-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 16px; border: 1px solid var(--room-line); border-radius: 11px; overflow: hidden; background: var(--room-panel); }
+    #simpact-climate-room .room-detail-team { padding: 18px; }
+    #simpact-climate-room .room-detail-policy { padding: 18px; border-left: 1px solid var(--room-line); }
+    #simpact-climate-room .room-person { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    #simpact-climate-room .room-person .room-avatar { width: 30px; height: 30px; font-size: 11px; border: 0; flex-shrink: 0; }
+    #simpact-climate-room .room-person-name { font-size: 12px; }
+    #simpact-climate-room .room-person-description { color: var(--room-muted); font-size: 10px; }
+    #simpact-climate-room .room-privacy { display: inline-flex; gap: 6px; align-items: center; margin-top: 16px; color: var(--room-muted); font-size: 10px; }
+    #simpact-climate-room .room-privacy svg { width: 12px; height: 12px; }
+    #simpact-climate-room .room-policy { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; font-size: 11px; margin-top: 13px; }
+    #simpact-climate-room .room-policy dt { color: var(--room-muted); }
+    #simpact-climate-room .room-policy dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+    #simpact-climate-room .room-outcome { margin-top: 22px; }
+    #simpact-climate-room .room-chart { width: 100%; display: block; color: var(--room-muted); }
+    #simpact-climate-room .room-chart text { fill: var(--room-muted); font: 11px Inter, -apple-system, sans-serif; }
+    #simpact-climate-room .room-chart .room-chart-final { stroke: var(--room-green); }
+    #simpact-climate-room .room-chart .room-chart-initial { stroke: var(--room-muted); }
+    #simpact-climate-room .room-chart-legend { display: flex; justify-content: flex-end; gap: 16px; font-size: 10px; color: var(--room-muted); }
+    #simpact-climate-room .room-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    #simpact-climate-room .room-chart-legend i { width: 15px; border-top: 2px solid var(--room-green); }
+    #simpact-climate-room .room-chart-legend span:first-child i { border-top: 2px dashed var(--room-muted); }
+    #simpact-climate-room .room-message { padding: 15px 0; border-bottom: 1px solid var(--room-line); display: flex; align-items: flex-start; gap: 12px; }
+    #simpact-climate-room .room-message-code { font-size: 10px; padding: 5px 7px; background: var(--room-soft); border-radius: 5px; min-width: 36px; text-align: center; }
+    #simpact-climate-room .room-message-content { min-width: 0; }
+    #simpact-climate-room .room-message strong { font-weight: 500; font-size: 12px; }
+    #simpact-climate-room .room-message p { margin-top: 5px; color: var(--room-muted); font-size: 12px; }
+    #simpact-climate-room .room-table-wrap { overflow-x: auto; }
+    #simpact-climate-room .room-table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 600px; }
+    #simpact-climate-room .room-table th { text-align: right; color: var(--room-muted); font-weight: 400; padding: 10px 8px; }
+    #simpact-climate-room .room-table td { text-align: right; padding: 12px 8px; border-top: 1px solid var(--room-line); font-variant-numeric: tabular-nums; }
+    #simpact-climate-room .room-table th:first-child, #simpact-climate-room .room-table td:first-child { text-align: left; }
+    #simpact-climate-room .room-table tbody tr.room-selected { background: var(--room-soft); }
+    #simpact-climate-room .room-footer { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: var(--room-muted); font-size: 10px; padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--room-line); }
+    #simpact-climate-room [hidden] { display: none !important; }
+    @media (max-width: 520px) {
+      #simpact-climate-room .room-top { padding: 15px; }
+      #simpact-climate-room .room-main { padding: 20px 15px 15px; }
+      #simpact-climate-room .room-topmeta { gap: 7px; font-size: 10px; }
+      #simpact-climate-room .room-summary { grid-template-columns: 1fr; }
+      #simpact-climate-room .room-stat { padding: 12px 15px; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+      #simpact-climate-room .room-stat + .room-stat { border-left: 0; border-top: 1px solid var(--room-line); }
+      #simpact-climate-room .room-statvalue { font-size: 26px; grid-row: span 2; }
+      #simpact-climate-room .room-statnote { margin-top: 0; }
+      #simpact-climate-room .room-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #simpact-climate-room .room-country { padding: 12px; }
+      #simpact-climate-room .room-detail { grid-template-columns: 1fr; }
+      #simpact-climate-room .room-detail-policy { border-left: 0; border-top: 1px solid var(--room-line); }
+      #simpact-climate-room .room-nav { gap: 17px; }
+      #simpact-climate-room .room-country-bottom { align-items: flex-start; flex-wrap: wrap; }
+      #simpact-climate-room .room-rounds button { min-height: 40px; }
+    }
+    @media (prefers-reduced-motion: reduce) { #simpact-climate-room * { transition: none !important; } }
+  </style>
+  <header class="room-top">
+    <div class="room-brand"><span class="room-brandmark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 16c0-7 8-11 15-11 0 7-4 14-11 14M5 21 16 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>simpact<span class="room-label">/ climate lab</span></div>
+    <div class="room-topmeta"><span>6 delegations · 18 agents</span><span>Offline run · seed 42</span></div>
+  </header>
+  <main class="room-main">
+    <div class="room-heading">
+      <div><span class="room-label"><span class="room-dot"></span>COMPLETED RUN / REPLAY</span><h1>At the negotiating table.</h1><p class="room-subtitle">Six delegations. Eighteen perspectives. One shared future.</p></div>
+      <div class="room-rounds" aria-label="Commitment round"><button type="button" data-round="1" aria-pressed="false">Initial · R1</button><button type="button" data-round="2" aria-pressed="true">Final · R2</button></div>
+    </div>
+    <section class="room-summary" aria-label="Round outcomes" aria-live="polite">
+      <div class="room-stat"><div class="room-statlabel">Warming by 2100 <span class="room-mock">MOCK</span></div><div class="room-statvalue" id="room-warming">2.10<small> °C</small></div><div class="room-statnote" id="room-warming-note">Target &lt; 2°C · not reached</div></div>
+      <div class="room-stat"><div class="room-statlabel">Climate fund contributions</div><div class="room-statvalue" id="room-fund">$202<small> B/yr</small></div><div class="room-statnote">Pledged, not disbursed</div></div>
+      <div class="room-stat"><div class="room-statlabel">Climate finance requested</div><div class="room-statvalue" id="room-requests">$375<small> B/yr</small></div><div class="room-statnote" id="room-gap">$173B annual funding gap</div></div>
+    </section>
+    <nav class="room-nav" aria-label="Run views"><button type="button" data-view="teams" aria-pressed="true">Delegations</button><button type="button" data-view="summit" aria-pressed="false">Summit record</button><button type="button" data-view="commitments" aria-pressed="false">Commitments</button></nav>
+    <section id="room-view-teams">
+      <div class="room-sectionhead"><h2>The delegations</h2><span>3 members per team</span></div>
+      <div class="room-grid" id="room-countries"></div>
+      <section class="room-detail" aria-label="Selected delegation" aria-live="polite">
+        <div class="room-detail-team"><div class="room-sectionhead"><h2 id="room-team-title">European Union</h2><span>Team composition</span></div>
+          <div class="room-person"><span class="room-avatar" aria-hidden="true">H</span><div><div class="room-person-name">Head negotiator</div><div class="room-person-description">Spokesperson · diplomacy &amp; coalitions</div></div></div>
+          <div class="room-person"><span class="room-avatar" aria-hidden="true">E</span><div><div class="room-person-name">Economic minister</div><div class="room-person-description">Development · competitiveness · finance</div></div></div>
+          <div class="room-person"><span class="room-avatar" aria-hidden="true">C</span><div><div class="room-person-name">Climate adviser</div><div class="room-person-description">Emissions · climate risk · credibility</div></div></div>
+          <div class="room-privacy"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor"/><path d="M5 7V4a3 3 0 0 1 6 0v3" stroke="currentColor"/></svg>Internal deliberations are delegation-private</div>
+        </div>
+        <div class="room-detail-policy"><div class="room-sectionhead"><h2>Public commitment</h2><span id="room-policy-round">Final · R2</span></div><dl class="room-policy" id="room-policy"></dl></div>
+      </section>
+    </section>
+    <section id="room-view-summit" hidden><div class="room-sectionhead"><h2>Published summit statements</h2><span>Public record only</span></div><div id="room-messages"></div></section>
+    <section id="room-view-commitments" hidden><div class="room-sectionhead"><h2>Submitted commitments</h2><span>Six simultaneous submissions</span></div><div class="room-table-wrap"><table class="room-table"><thead><tr><th scope="col">Delegation</th><th scope="col">Peak year</th><th scope="col">Reduction start</th><th scope="col">Rate %/yr</th><th scope="col">Forest %</th><th scope="col">Planting %</th><th scope="col">Fund $B/yr</th></tr></thead><tbody id="room-commitment-rows"></tbody></table></div><p class="room-subtitle" style="margin-top:12px">Fund convention: positive contributes; negative requests.</p></section>
+    <section class="room-outcome" aria-label="Mock emissions trajectory">
+      <div class="room-sectionhead"><h2>A smaller footprint. Still a gap.</h2><span>Mock emissions · 2026 = 100</span></div>
+      <div class="room-chart-legend"><span><i></i>Initial</span><span id="room-final-legend"><i></i>Final</span></div>
+      <svg class="room-chart" id="room-trajectory" role="img" aria-label="Deterministic mock emissions index over time"></svg>
+    </section>
+    <footer class="room-footer"><span>Interface preview · scripted agents · mock climate, not C-ROADS</span><span>World Climate materials: Climate Interactive · MIT Sloan · UMass Lowell · CC BY 4.0</span></footer>
+  </main>
+  <script type="application/json" id="room-public-data">
+    {
+      "delegations": [
+        {"id":"usa","code":"US","name":"United States"},
+        {"id":"eu","code":"EU","name":"European Union"},
+        {"id":"china","code":"CN","name":"China"},
+        {"id":"india","code":"IN","name":"India"},
+        {"id":"other_developed","code":"OD","name":"Other Developed Nations"},
+        {"id":"other_developing","code":"OG","name":"Other Developing Nations"}
+      ],
+      "rounds": {
+        "1": {
+          "warming":2.1526,
+          "commitments":{"usa":[2035,2040,1.036,20,20,24],"eu":[2026,2026,3.511,50,40,77],"china":[2030,2035,2.147,40,40,0],"india":[2040,2045,1.667,40,30,-106],"other_developed":[2026,2030,2.65,30,30,58],"other_developing":[2045,2050,1.671,60,50,-267]},
+          "trajectory":[[2026,100],[2031,103.509234],[2036,104.244661],[2041,102.949465],[2046,100.24444],[2051,93.329154],[2056,85.044992],[2061,77.552543],[2066,70.770286],[2071,64.625753],[2076,59.054446],[2081,53.998892],[2086,49.407822],[2091,45.235447],[2096,41.440829],[2100,38.652365]],
+          "statements":{"usa":"United States announces emissions peak 2035, reductions from 2040 at 1.04%/year; finance +24.0 billion/year.","eu":"European Union announces emissions peak 2026, reductions from 2026 at 3.51%/year; finance +77.0 billion/year.","china":"China announces emissions peak 2030, reductions from 2035 at 2.15%/year; finance +0.0 billion/year.","india":"India announces emissions peak 2040, reductions from 2045 at 1.67%/year; finance -106.0 billion/year.","other_developed":"Other Developed Nations announces emissions peak 2026, reductions from 2030 at 2.65%/year; finance +58.0 billion/year.","other_developing":"Other Developing Nations announces emissions peak 2045, reductions from 2050 at 1.67%/year; finance -267.0 billion/year."}
+        },
+        "2": {
+          "warming":2.1006,
+          "commitments":{"usa":[2035,2040,1.488,20,20,39],"eu":[2026,2026,3.963,50,40,91],"china":[2030,2035,2.397,40,40,0],"india":[2040,2045,1.917,40,30,-107],"other_developed":[2026,2030,2.9,30,30,72],"other_developing":[2045,2050,1.921,60,50,-268]},
+          "trajectory":[[2026,100],[2031,103.300724],[2036,103.700318],[2041,101.831385],[2046,98.434327],[2051,90.786999],[2056,81.569011],[2061,73.335023],[2066,65.973614],[2071,59.386855],[2076,53.48856],[2081,48.202764],[2086,43.462432],[2091,39.208326],[2096,35.388037],[2100,32.612777]],
+          "statements":{"usa":"United States submits its unconditional final commitment.","eu":"European Union submits its unconditional final commitment.","china":"China submits its unconditional final commitment.","india":"India submits its unconditional final commitment.","other_developed":"Other Developed Nations submits its unconditional final commitment.","other_developing":"Other Developing Nations submits its unconditional final commitment."}
+        }
+      }
+    }
+  </script>
+  <script>
+    (() => {
+      const root = document.getElementById('simpact-climate-room');
+      const data = JSON.parse(root.querySelector('#room-public-data').textContent);
+      const find = selector => root.querySelector(selector);
+      let round = '2';
+      let selected = 'eu';
+      let view = 'teams';
+      const money = value => `${value > 0 ? '+' : value < 0 ? '−' : ''}$${Math.abs(value).toFixed(0)}B`;
+      const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      function renderChart() {
+        const svg = find('#room-trajectory');
+        const width = Math.max(260, Math.round(svg.getBoundingClientRect().width || 680));
+        const height = 172, left = 37, right = 21, top = 21, bottom = 32;
+        const series = [data.rounds['1'].trajectory, data.rounds['2'].trajectory];
+        const all = series.flat();
+        const xmin = Math.min(...all.map(p => p[0])), xmax = Math.max(...all.map(p => p[0]));
+        const ymin = Math.floor(Math.min(...all.map(p => p[1])) / 10) * 10;
+        const ymax = Math.ceil(Math.max(...all.map(p => p[1])) / 10) * 10;
+        const x = year => left + (year - xmin) / (xmax - xmin) * (width - left - right);
+        const y = value => top + (ymax - value) / (ymax - ymin) * (height - top - bottom);
+        const path = points => points.map((p,i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(2)},${y(p[1]).toFixed(2)}`).join(' ');
+        const tickYears = width < 420 ? [2026,2060,2100] : [2026,2050,2075,2100];
+        const labels = tickYears.map(year => `<text x="${x(year)}" y="${height-12}" text-anchor="${year === xmin ? 'start' : year === xmax ? 'end' : 'middle'}">${year}</text>`).join('');
+        const grid = [40,70,100].map(value => `<path d="M${left},${y(value)}H${width-right}" stroke="var(--room-line)" fill="none"/><text x="${left-9}" y="${y(value)+4}" text-anchor="end">${value}</text>`).join('');
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svg.innerHTML = `<title>Mock global emissions index, 2026–2100</title><desc>Scripted run. Initial emissions index ends at 38.65; final at 32.61. Not a scientific forecast.</desc>${grid}${labels}<path class="room-chart-initial" d="${path(series[0])}" fill="none" stroke-width="2" stroke-dasharray="5 5"/>${round === '2' ? `<path class="room-chart-final" d="${path(series[1])}" fill="none" stroke-width="2.5"/>` : ''}`;
+        find('#room-final-legend').hidden = round !== '2';
+      }
+      function render() {
+        const current = data.rounds[round];
+        const values = Object.values(current.commitments);
+        const contribution = values.reduce((sum,c) => sum + Math.max(0,c[5]),0);
+        const requested = values.reduce((sum,c) => sum + Math.max(0,-c[5]),0);
+        find('#room-warming').innerHTML = `${current.warming.toFixed(2)}<small> °C</small>`;
+        find('#room-fund').innerHTML = `$${contribution}<small> B/yr</small>`;
+        find('#room-requests').innerHTML = `$${requested}<small> B/yr</small>`;
+        find('#room-gap').textContent = `$${Math.max(0,requested-contribution)}B annual funding gap`;
+        root.querySelectorAll('[data-round]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.round === round)));
+        root.querySelectorAll('[data-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.view === view)));
+        ['teams','summit','commitments'].forEach(name => find(`#room-view-${name}`).hidden = name !== view);
+        find('#room-countries').innerHTML = data.delegations.map(d => {
+          const c = current.commitments[d.id];
+          return `<button type="button" class="room-country" data-country="${d.id}" aria-pressed="${selected === d.id}" aria-label="Select ${esc(d.name)}"><span class="room-country-top"><span class="room-country-code">${d.code}</span><span class="room-check">✓ Submitted</span></span><span class="room-country-name">${esc(d.name)}</span><span class="room-country-metric">${c[2].toFixed(2)}% <small>cuts / year</small></span><span class="room-country-bottom"><span class="room-avatars" aria-hidden="true"><span class="room-avatar">H</span><span class="room-avatar">E</span><span class="room-avatar">C</span></span><span class="room-finance">${money(c[5])} / yr</span></span></button>`;
+        }).join('');
+        const delegation = data.delegations.find(d => d.id === selected);
+        const c = current.commitments[selected];
+        find('#room-team-title').textContent = delegation.name;
+        find('#room-policy-round').textContent = round === '1' ? 'Initial · R1' : 'Final · R2';
+        const policy = [['Emissions peak',c[0]],['Reductions begin',c[1]],['Annual reduction',`${c[2].toFixed(2)}%`],['Deforestation prevention',`${c[3]}%`],['Afforestation effort',`${c[4]}%`],['Climate fund',`${money(c[5])} / yr`]];
+        find('#room-policy').innerHTML = policy.map(([label,value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('');
+        find('#room-messages').innerHTML = data.delegations.map(d => `<article class="room-message"><span class="room-message-code">${d.code}</span><div class="room-message-content"><strong>${esc(d.name)}</strong><span class="room-label" style="margin-left:8px">spokesperson</span><p>${esc(current.statements[d.id])}</p></div></article>`).join('');
+        find('#room-commitment-rows').innerHTML = data.delegations.map(d => {
+          const c = current.commitments[d.id];
+          return `<tr class="${d.id === selected ? 'room-selected' : ''}"><td>${esc(d.name)}</td><td>${c[0]}</td><td>${c[1]}</td><td>${c[2].toFixed(2)}</td><td>${c[3]}</td><td>${c[4]}</td><td>${c[5] > 0 ? '+' : ''}${c[5]}</td></tr>`;
+        }).join('');
+        renderChart();
+      }
+      root.addEventListener('click', event => {
+        const button = event.target.closest('button');
+        if (!button || !root.contains(button)) return;
+        if (button.dataset.round) round = button.dataset.round;
+        if (button.dataset.country) selected = button.dataset.country;
+        if (button.dataset.view) view = button.dataset.view;
+        render();
+      });
+      render();
+      if (typeof ResizeObserver !== 'undefined') new ResizeObserver(renderChart).observe(find('#room-trajectory'));
+    })();
+  </script>
+</div>

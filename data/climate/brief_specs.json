@@ -1,0 +1,79 @@
+{
+  "usa": {
+    "file": "6R-WCS-Briefing-Statement-USA/6R-WCS-Briefing-Statement-USA-v19.pdf",
+    "title": "United States",
+    "goals": ["Protect the economy, jobs, national security and affordability", "Address climate risks within a politically divided federal policy environment", "Seek reciprocal emissions action by China and developing countries"],
+    "negotiating_constraints": ["The November 2025 brief describes withdrawal from the Paris Agreement and promotion of fossil fuel development", "Do not place an undue economic burden on the US while developing-country emissions continue to grow", "China must cut emissions for the US to consider action"],
+    "opportunities": ["Lower renewable energy costs", "State and city climate action", "Forest protection and expansion"],
+    "climate_risks": ["Extreme weather and financial-system risks", "Climate damage across all 50 states"],
+    "finance_position": "contributor",
+    "baseline": [2035, 2040, 1.0, 20, 20, 25],
+    "limits": [6.0, 150]
+  },
+  "eu": {
+    "file": "6R-WCS-Briefing-Statement-EU-v12.pdf",
+    "title": "European Union",
+    "goals": ["Lead collective emissions reductions while protecting economies and security", "Maintain credibility around the 55% net reduction pledge for 2030 versus 1990", "Mobilize effective climate finance with international participation"],
+    "negotiating_constraints": ["The EU will lead but cannot and will not move alone", "Security, economic growth and cost of living constrain policy", "Financial assistance should reach its intended climate use"],
+    "opportunities": ["Energy independence", "Cleaner air and clean energy jobs", "Cooperation with US subnational actors"],
+    "climate_risks": ["Increasing damage without dramatic global emissions reductions"],
+    "finance_position": "contributor",
+    "baseline": [2026, 2026, 3.5, 50, 40, 80],
+    "limits": [8.0, 200]
+  },
+  "china": {
+    "file": "6R-WCS-Briefing-Statement-China-v13.pdf",
+    "title": "China",
+    "goals": ["Protect economic development and vital national interests", "Limit climate risks and improve air quality", "Use clean energy manufacturing leadership to support transition"],
+    "negotiating_constraints": ["Developed nations should take responsibility for historic emissions", "Any Chinese commitments should require significant US, EU and other developed-nation action", "Do not use climate policy to constrain development, markets or national influence"],
+    "opportunities": ["Renewables and electric vehicle manufacturing", "Electrification", "Reduced air pollution"],
+    "climate_risks": ["Water, food and energy stress", "Sea level rise, droughts and heat waves"],
+    "finance_position": "flexible",
+    "baseline": [2030, 2035, 2.0, 40, 40, 0],
+    "limits": [7.0, 120]
+  },
+  "india": {
+    "file": "6R-WCS-Briefing-Statement-India-v12.pdf",
+    "title": "India",
+    "goals": ["Raise living standards and overcome poverty", "Secure developed-country support for clean energy and adaptation", "Achieve climate benefits without sacrificing economic development"],
+    "negotiating_constraints": ["An unfair mitigation burden on India is unacceptable", "Clean energy action cannot come at the expense of development", "Rich nations must take significant action proportionate to past emissions"],
+    "opportunities": ["Rapid renewable energy growth", "Improved air quality", "Electricity access and reduced fossil imports"],
+    "climate_risks": ["Climate risks to development and well-being"],
+    "finance_position": "recipient",
+    "baseline": [2040, 2045, 1.5, 40, 30, -100],
+    "limits": [6.0, 400]
+  },
+  "other_developed": {
+    "file": "6R-WCS-Briefing-Statement-Other-Developed-Nations-v12.pdf",
+    "title": "Other Developed Nations",
+    "goals": ["Protect economies, jobs and national interests while addressing climate change", "Secure an effective international agreement with broad participation", "Support clean energy, public health and energy security"],
+    "negotiating_constraints": ["An agreement placing the greatest economic burden on this bloc is politically unacceptable", "The US and developing nations must also make commitments", "Fossil fuel revenue and jobs complicate transition"],
+    "opportunities": ["Affordable renewable energy", "Public health and energy security co-benefits"],
+    "climate_risks": ["Rising sea levels and prolonged droughts"],
+    "finance_position": "contributor",
+    "baseline": [2026, 2030, 2.5, 30, 30, 60],
+    "limits": [7.0, 180]
+  },
+  "other_developing": {
+    "file": "6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+    "title": "Other Developing Nations",
+    "goals": ["Protect survival and pursue the 1.5C objective", "Secure debt-free finance for adaptation and clean development", "Protect forests while improving living standards"],
+    "negotiating_constraints": ["Ambitious action requires strong wealthy-nation support", "Developed nations should take responsibility for historic emissions", "Funding must enable rather than prevent development"],
+    "opportunities": ["Leapfrog fossil fuels with clean energy", "Finance forest protection and reduce land degradation"],
+    "climate_risks": ["Food insecurity, extreme heat and displacement", "Loss of low-lying island nations", "Drought, disease and ecological disruption"],
+    "finance_position": "recipient",
+    "baseline": [2045, 2050, 1.5, 60, 50, -250],
+    "limits": [7.0, 2000]
+  },
+  "climate_alliance_proxy": {
+    "file": "6R-WCS-Briefing-Statement-USA/6R-WCS-Briefing-Statement-US-ClimateAlliance-v18.pdf",
+    "title": "US Climate Alliance (experimental whole-US proxy)",
+    "goals": ["Show continued American support for the Paris Agreement", "Influence official parties toward ambitious action", "Share clean technologies and manufacturing to reduce transition costs"],
+    "negotiating_constraints": ["Official briefing grants no formal negotiating standing, only influence", "Subnational actors cannot bind the federal government or the whole US region"],
+    "opportunities": ["State and city clean energy policies", "Broad coalitions of businesses and institutions"],
+    "climate_risks": ["Damage to all US states"],
+    "finance_position": "contributor",
+    "baseline": [2026, 2026, 4.0, 50, 40, 50],
+    "limits": [8.0, 150]
+  }
+}

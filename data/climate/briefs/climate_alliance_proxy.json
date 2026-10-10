@@ -1,0 +1,51 @@
+{
+  "delegation": "usa",
+  "title": "US Climate Alliance (experimental whole-US proxy)",
+  "variant": "climate_alliance_proxy",
+  "source_file": "materials/6R-WCS-Briefing-Statement-USA/6R-WCS-Briefing-Statement-US-ClimateAlliance-v18.pdf",
+  "source_sha256": "e483df6835f99861db42be9792f15cd53f8e4b9b6650fd233bcc6f0c600d40ed",
+  "source_url": "https://www.climateinteractive.org/world-climate-simulation-resources/",
+  "source_pages": [
+    {
+      "page": 1,
+      "text": "To: US Climate Alliance & America Is All In coalitions (Cities and States at UN World Climate Summit) Subject: Strategy Briefing Goals You are attending the UN conference as a representative of the US Climate Alliance and America Is All In coalitions. 24 governors and 362 cities and counties in the United States, along with thousands of businesses, organizations, and institutions representing two-thirds of US population, have pledged to reduce greenhouse gas (GHG) emissions in line with the Paris Agreement. You have no official standing in the negotiations—you can only create results via your influence on the official parties. Meanwhile, the federal government pulled the US out of the Paris Agreement and is actively promoting fossil fuels at home and abroad, repealed subsidies for renewable energy and EVs, and imposed tariffs that hit renewable energy supply chains. Unlike other national government delegations, you are not beholden to vested interests and are free to advocate for bold climate policies. Throughout the conference, use your influence to: 1. Show other delegations that most Americans support climate action and a transition to clean energy. Highlight the work you are doing at the state and city level, with the goal of persuading other groups to increase their emission cuts and contributions to the global climate fund. Your motto—and hashtag—is “#AmericaIsAllIn” the Paris Agreement. 2. Push other delegations to join you in taking ambitious action and invite them to collaborate with you to cut the cost of transition by sharing technologies and climate tech manufacturing. Context At the 2015 UN climate negotiations in Paris, nations agreed to a goal of limiting global warming to “well below 2°C above pre-industrial levels and pursuing efforts to limit the temperature increase to 1.5°C above pre-industrial levels.” The scientific consensus on climate is clear: over 97% of climate scientists agree that climate change is happening, that it is caused primarily by use of fossil fuels, and that the impacts could be devastating. 1 US government research has shown that climate change is harming all 50 states today and that without dramatic reductions in global emissions, the damage will become far more severe. Subnational Actions The states and cities you represent are already committed to action on climate change. 11 US states have a carbon tax that is successfully reducing their GHG emissions while growing their economies. 2 48 US states have developed climate action plans, 3 although only 24 have 100% clean energy goals. 4 Scale You represent signatories from all 50 states (~2/3 of the US population) with a combined GDP of over $20 trillion/year (74% of US GDP)— larger than that of China, the world’s second largest economy. 5 Public Opinion Over 70% of the US public believes climate change is real, over 60% are worried about it, and nearly 50% believe they have already experienced its effects. 6 About 66% of Americans support a transition of the US economy to 100% clean energy by 2050. 7 Unfortunately, polarization around climate change is intensifying in the US: many liberal Democrats are “very worried,” while few conservative Republicans share that concern. However, there are many opportunities for clean energy to support conservative values—energy independence, affordability, and national security. 6 https://climatecommunication.yale.edu/visualizations-data/ycom-us/ 5 https://www.americaisallin.com/ 4 https://www.cesa.org/projects/100-clean-energy-collaborative/ 3 https://www.c2es.org/document/climate-action-plans/ 2 https://www.rggi.org/program-overview-and-design/elements 1 https://skepticalscience.com/global-warming-scientific-consensus.htm"
+    },
+    {
+      "page": 2,
+      "text": "Developed by Climate Interactive, MIT Sloan, and the UML Climate Change Initiative. Updated: November 2025"
+    }
+  ],
+  "attribution": "World Climate Simulation materials by Climate Interactive, MIT Sloan, and the UMass Lowell Climate Change Initiative. Updated November 2025. Adapted for nested-agent experiments.",
+  "license": "CC BY 4.0",
+  "goals": [
+    "Show continued American support for the Paris Agreement",
+    "Influence official parties toward ambitious action",
+    "Share clean technologies and manufacturing to reduce transition costs"
+  ],
+  "negotiating_constraints": [
+    "Official briefing grants no formal negotiating standing, only influence",
+    "Subnational actors cannot bind the federal government or the whole US region"
+  ],
+  "opportunities": [
+    "State and city clean energy policies",
+    "Broad coalitions of businesses and institutions"
+  ],
+  "climate_risks": [
+    "Damage to all US states"
+  ],
+  "finance_position": "contributor",
+  "experimental_baseline": {
+    "delegation": "usa",
+    "emissions_peak_year": 2026,
+    "reduction_start_year": 2026,
+    "annual_reduction_rate_percent": 4.0,
+    "deforestation_prevention_percent": 50,
+    "afforestation_percent": 40,
+    "climate_fund_billion_per_year": 50
+  },
+  "experimental_limits": {
+    "reduction_rate_maximum": 8.0,
+    "finance_absolute_maximum": 150
+  },
+  "adaptation_notes": "Goals and qualitative constraints paraphrase pages 1-2. Baseline commitments, numeric ceilings, finance-role restrictions, personalities and scoring are author-created experimental assumptions, NOT official prescribed positions. Source text reflects November 2025 and is not a live policy fact-check. This variant deliberately grants a hypothetical whole-US proxy role to a coalition that has NO official negotiating standing in the source. Results must not be described as binding US commitments."
+}
