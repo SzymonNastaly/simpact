@@ -1,4 +1,4 @@
-"""Local agent-dynamics lab: private replay inspection and a meeting protocol sandbox.
+"""Local Round 1 viewer with private replay inspection APIs.
 
 Run: python -m climate_sim.lab --port 8766
 Not a production multi-user service. The localhost operator is the researcher;
@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .agents import policy_distance
 from .briefs import load_briefs
-from .meetings import Meeting, MeetingHub, Participant
+from .meetings import MeetingHub, Participant
 from .memory import Event, EventStore
 from .metrics import dispersion
 from .models import ClimateCommitment
@@ -38,8 +38,6 @@ class Lab:
         if output:
             output.mkdir(mode=0o700, parents=True, exist_ok=False)
         self.hub = MeetingHub(participants, store=EventStore(output / "meetings.jsonl" if output else None))
-        self.hub.meetings = {raw["id"]: Meeting.model_validate(raw) for raw in self.state.get("meetings", [])}
-        self.hub.tick = self.state.get("meeting_tick", 0)
         self.human_role: str | None = None
         self.run_name = run.name
 
@@ -85,7 +83,10 @@ class Lab:
                     "disagreement_before": before, "disagreement_after": after,
                     "pairwise_distance": [{"a": a, "b": b, "distance": policy_distance(ClimateCommitment.model_validate(ca), ClimateCommitment.model_validate(cb))}
                         for a, ca in last_positions.items() for b, cb in last_positions.items() if a < b]}
-            rounds[str(round_number)] = {"teams": teams,
+            # Filtered events preserve exact participant scopes for saved conversations.
+            meetings = {e.payload["meeting"]["id"]: e.payload["meeting"] for e in round_events
+                        if e.kind.startswith("meeting_") and "meeting" in e.payload}
+            rounds[str(round_number)] = {"teams": teams, "meetings": list(meetings.values()),
                 "traces": [self.trace_overview(e) for e in round_events if e.kind == "agent_trace"],
                 "timeline": [self.trace_overview(e) if e.kind == "agent_trace" else e.model_dump(mode="json") for e in round_events if e.kind in (
                     "individual_preparation", "internal_speech", "agent_trace", "internal_ballot",
@@ -109,6 +110,30 @@ class Lab:
         payload.pop("observations", None)
         payload.pop("inputs", None)
         return result
+
+    def round_one(self, scope: str = "public") -> dict:
+        replay = self.replay(scope)
+        first = replay["rounds"].get("1", {"teams": {}, "traces": []})
+        countries = []
+        for delegation in replay["delegations"]:
+            members = [a for a in replay["roster"] if a["delegation"] == delegation["id"]]
+            team = first["teams"].get(delegation["id"], {})
+            countries.append({"id": delegation["id"], "name": delegation["name"],
+                              "members": members, "discussion": team.get("speeches", [])})
+        return {"round": 1, "run": replay["run"], "backend": replay["config"]["backend"],
+                "countries": countries}
+
+    def round_one_agent(self, agent_id: str, scope: str = "public") -> dict:
+        first = self.round_one(scope)
+        agent = next((a for country in first["countries"] for a in country["members"]
+                      if a["agent"] == agent_id), None)
+        if agent is None:
+            raise PermissionError("Unknown agent")
+        traces = [self.trace(e.id, scope) for e in self.events
+                  if e.kind == "agent_trace" and e.round == 1 and e.actor == agent_id
+                  and e.payload.get("stage") in {"prepare", "internal", "mandate", "vote", "announce"}
+                  and (scope == "researcher" or scope == agent_id)]
+        return {"round": 1, "agent": agent, "traces": traces}
 
     def trace(self, event_id: str, scope: str) -> dict:
         member = self.state["agents"].get(scope)
@@ -194,6 +219,11 @@ def server_for(lab: Lab, port: int) -> ThreadingHTTPServer:
                         scope = lab.human_role
                     if parsed.path == "/api/replay":
                         return self.send_json(200, lab.replay(scope))
+                    if parsed.path == "/api/round-one":
+                        return self.send_json(200, lab.round_one(scope))
+                    if parsed.path == "/api/round-one/agent":
+                        agent_id = parse_qs(parsed.query).get("agent", [""])[0]
+                        return self.send_json(200, lab.round_one_agent(agent_id, scope))
                     if parsed.path == "/api/trace":
                         event_id = parse_qs(parsed.query).get("id", [""])[0]
                         return self.send_json(200, lab.trace(event_id, scope))
@@ -250,8 +280,8 @@ def main():
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%fZ")
     lab = Lab(args.run, output=ROOT / "runs" / f"meeting-lab-{stamp}")
     server = server_for(lab, args.port)
-    print(f"Agent dynamics lab: http://127.0.0.1:{server.server_address[1]}/", flush=True)
-    print("Local researcher workspace. Manual meeting sandbox; no Gemini calls. Not for shared/public deployment.", flush=True)
+    print(f"Round 1 viewer: http://127.0.0.1:{server.server_address[1]}/", flush=True)
+    print("Recorded delegation discussions and agent perspectives. Opening the viewer makes no Gemini calls.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

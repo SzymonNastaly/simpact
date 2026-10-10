@@ -1,11 +1,10 @@
 # simpact
 
-## Nested climate negotiation / agent dynamics lab
+## Round 1 delegation discussions
 
-The climate experiment has six delegations with three members each: head
-negotiator, economic minister and climate adviser. Inspect each member's position,
-each round's private team discussion and mandate support, then test member-to-member
-or group meeting requests with a five-tick acknowledgement deadline.
+The frontend shows Round 1: choose a country to read its recorded delegation
+discussion, then select an agent to inspect its preparation notes, decision
+summaries, observations and actions. Country cards show the actual agent count.
 
 ```bash
 uv sync
@@ -13,13 +12,12 @@ uv run python -m climate_sim --seed 42 --output runs/my-climate-run
 uv run python -m climate_sim.lab --run runs/my-climate-run --port 8766
 ```
 
-Open `http://127.0.0.1:8766/`. This is a local researcher replay and a manual meeting
-protocol sandbox, not a live multi-user summit. Set `GEMINI_API_KEY` locally and add
-`--backend gemini` to generate LLM agent runs. Offline policies and the mock climate
-evaluator are explicitly labelled; private archives are not public summit data.
+Open `http://127.0.0.1:8766/`. The viewer reads a saved session. Set
+`GEMINI_API_KEY` locally and add `--backend gemini` to generate Gemini agent runs
+with `gemini-3.8-flash`. Offline runs label their summaries as scripted policies.
+Private archives stay local.
 
-See [the agent lab guide](docs/agent_lab.md) for information boundaries, member/human
-controllers, meeting protocol details and the remaining live-integration work.
+See [the viewer guide](docs/agent_lab.md) for setup and the available agent records.
 
 ## Original Model UN simulator
 

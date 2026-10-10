@@ -1,100 +1,117 @@
-// Dependency-free DOM/render smoke test. Browser visual QA is a separate check.
+// Interaction checks against an actual run; visual browser QA is separate.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const {execFileSync} = require('node:child_process');
-const rootPath = path.resolve(__dirname, '..');
-const fixture = JSON.parse(execFileSync(path.join(rootPath,'.venv/bin/python'), ['-c',
-  'import json,tempfile; from pathlib import Path; from climate_sim.models import SimulationConfig; from climate_sim.simulation import Simulation; from climate_sim.lab import Lab; tasktemp=tempfile.TemporaryDirectory(); p=Path(tasktemp.name)/"run"; Simulation(SimulationConfig(seed=42),output=p).run(); lab=Lab(p); print(json.dumps({"researcher":lab.replay("researcher"),"public":lab.replay("public"),"china.climate_adviser":lab.replay("china.climate_adviser")})); tasktemp.cleanup()'
-], {cwd:rootPath,encoding:'utf8',maxBuffer:16 * 1024 * 1024}));
-const html = fs.readFileSync(path.join(rootPath,'frontend/index.html'),'utf8');
-const script = fs.readFileSync(path.join(rootPath,'frontend/app.js'),'utf8');
+const root = path.resolve(__dirname,'..');
+const fixture = JSON.parse(execFileSync(path.join(root,'.venv/bin/python'),['-c',
+  'import json,tempfile; from pathlib import Path; from climate_sim.models import SimulationConfig; from climate_sim.simulation import Simulation; from climate_sim.lab import Lab; tmp=tempfile.TemporaryDirectory(); p=Path(tmp.name)/"run"; Simulation(SimulationConfig(seed=42,team_size=5),output=p).run(); lab=Lab(p); view=lab.round_one("researcher"); print(json.dumps({"view":view,"details":{a["agent"]:lab.round_one_agent(a["agent"],"researcher") for c in view["countries"] for a in c["members"]}})); tmp.cleanup()'
+],{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024}));
+const html = fs.readFileSync(path.join(root,'frontend/index.html'),'utf8');
+const script = fs.readFileSync(path.join(root,'frontend/app.js'),'utf8');
 const elements = new Map();
-const documentEvents = {};
-let invitees = [];
+const handlers = {};
+let focused = null;
 class Element {
-  constructor(id) {this.id=id;this.value='';this.textContent='';this.hidden=false;this.disabled=false;this.dataset={};this.handlers={};this.attributes={};this.classes=new Set();this.classList={toggle:(c,on)=>on?this.classes.add(c):this.classes.delete(c)};this._html='';}
-  get innerHTML() {return this._html;}
-  set innerHTML(value) {this._html=value;if(this.id==='invitees') invitees=[...value.matchAll(/name="invitee" value="([^"]+)"/g)].map(m=>({value:m[1],checked:false}));}
-  setAttribute(k,v) {this.attributes[k]=v;}
-  addEventListener(event,handler) {this.handlers[event]=handler;}
-  showModal() {this.open=true;}
-  close() {this.open=false;}
+  constructor(id){this.id=id;this.innerHTML='';this.textContent='';this.hidden=false;this.open=false;this.disabled=false;this.dataset={};this.handlers={};this.isConnected=true;}
+  addEventListener(kind,fn){this.handlers[kind]=fn;}
+  focus(){focused=this.id;}
+  showModal(){this.open=true;}
+  close(){this.open=false;this.handlers.close?.();}
 }
-for(const match of html.matchAll(/\bid="([^"]+)"/g)) elements.set(match[1],new Element(match[1]));
-const tabs=['delegation','floor'].map(workspace=>{const b=new Element();b.dataset={workspace};return b;});
-const posts=[];
-const hub={tick:0,acknowledgement_ticks:5,human_role:null,participants:fixture.researcher.roster.map(a=>({id:a.agent,delegation:a.delegation,role:a.role,model:a.backend,controller:'agent'})),meetings:[]};
-const document={querySelector(selector){assert.ok(selector.startsWith('#'));const found=elements.get(selector.slice(1));assert.ok(found,`Missing ${selector}`);return found;},querySelectorAll(selector){if(selector==='.workspace-tabs button')return tabs;if(selector==='#invitees input:checked')return invitees.filter(i=>i.checked);throw Error(`Unexpected ${selector}`);},addEventListener(event,handler){documentEvents[event]=handler;}};
+for(const match of html.matchAll(/\bid="([^"]+)"/g))elements.set(match[1],new Element(match[1]));
+elements.get('discussion-view').hidden=true;
+const requests=[];
+let failNext=false;
+let delayedAgent=null;
+let resolveDelayed;
 async function fetch(url,options){
-  if(options){const body=JSON.parse(options.body);posts.push(body);if(body.operation==='claim'){hub.human_role=body.actor;hub.participants.find(p=>p.id===body.actor).controller='human';}if(body.operation==='release'){hub.participants.find(p=>p.id===hub.human_role).controller='agent';hub.human_role=null;}if(body.operation==='advance')hub.tick+=1;return{ok:true,json:async()=>({human_role:hub.human_role,tick:hub.tick})};}
-  const scope=hub.human_role || new URL(url,'http://localhost').searchParams.get('scope') || 'public';
-  if(url.startsWith('/api/replay'))return{ok:true,json:async()=>({...structuredClone(fixture[scope] || fixture.public),scope,human_role:hub.human_role})};
-  return{ok:true,json:async()=>structuredClone(hub)};
+  assert.equal(options,undefined,'The viewer must never trigger simulation actions');
+  requests.push(url);
+  if(failNext){failNext=false;return{ok:false};}
+  const parsed=new URL(url,'http://localhost');
+  assert.equal(parsed.searchParams.get('scope'),'researcher');
+  let data;
+  if(parsed.pathname==='/api/round-one')data=fixture.view;
+  else{
+    assert.equal(parsed.pathname,'/api/round-one/agent');
+    const id=parsed.searchParams.get('agent');
+    data=fixture.details[id];
+    assert.ok(data);
+    if(id===delayedAgent)await new Promise(resolve=>{resolveDelayed=resolve;});
+  }
+  return{ok:true,json:async()=>structuredClone(data)};
 }
-const context=vm.createContext({document,fetch,URL,console});
+const document={getElementById(id){assert.ok(elements.has(id),`Missing #${id}`);return elements.get(id);},
+  querySelector(selector){assert.match(selector,/^\[data-country=/);return new Element('country-card');},
+  addEventListener(kind,fn){handlers[kind]=fn;}};
+const context=vm.createContext({document,window:{scrollTo(){}},fetch,URL,console,Set,encodeURIComponent});
 vm.runInContext(script,context);
 const settle=async()=>{for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
 const el=id=>elements.get(id);
-const click=async dataset=>{documentEvents.click({target:{closest:()=>({dataset,disabled:false})}});await settle();};
-const change=async(id,value)=>{el(id).value=value;await el(id).handlers.change({target:el(id)});await settle();};
+async function click(dataset){const target=new Element('trigger');target.dataset=dataset;handlers.click({target:{closest:()=>target}});await settle();}
 
 (async()=>{
   await settle();
-  assert.match(el('workspace-title').textContent,/China/);
   assert.equal((el('countries').innerHTML.match(/data-country=/g)||[]).length,6);
-  assert.equal((el('agent-cards').innerHTML.match(/data-agent=/g)||[]).length,3);
-  assert.equal((el('internal-transcript').innerHTML.match(/class="speech /g)||[]).length,6);
-  assert.match(el('internal-transcript').innerHTML,/2\.07%/);
-  assert.match(el('agent-perspective').innerHTML,/Individual-private preparation strategy/);
-  assert.match(el('alignment').innerHTML,/0\.024/);
-  assert.equal(posts.length,0,'A replay must not trigger agent actions or automatic ACKs');
+  assert.match(el('roster-total').textContent,/6 delegations · 30 agents/);
+  assert.equal(el('discussion-view').hidden,true);
+  assert.match(el('run-caption').textContent,/Recorded scripted session/);
+  assert.doesNotMatch(html,/<aside|sidebar|round-switch|workspace-tabs|meeting-dialog/);
 
-  await click({round:'2'});
-  assert.match(el('discussion-access').textContent,/Round 2/);
-  assert.match(el('agent-perspective').innerHTML,/Starting shared position from prior round/);
-  await click({country:'eu'});
-  assert.match(el('workspace-title').textContent,/European Union/);
-  assert.match(el('mandate').innerHTML,/Team priorities/);
+  await click({country:'china'});
+  assert.equal(el('country-view').hidden,true);
+  assert.equal(el('discussion-view').hidden,false);
+  assert.match(el('country-title').textContent,/China/);
+  assert.equal((el('agents').innerHTML.match(/data-agent=/g)||[]).length,5);
+  assert.equal((el('discussion').innerHTML.match(/class="message"/g)||[]).length,10);
+  const country=fixture.view.countries.find(c=>c.id==='china');
+  assert.ok(el('discussion').innerHTML.includes(country.discussion[0].payload.speech));
+  assert.equal(focused,'country-title');
 
-  await change('viewer','public');
-  assert.match(el('internal-transcript').innerHTML,/Private delegation room/);
-  assert.match(el('mandate').innerHTML,/National mandate is delegation-private/);
-  assert.doesNotMatch(el('mandate').innerHTML,/Team priorities/,'Old private mandate must clear on scope change');
-  assert.doesNotMatch(el('agent-perspective').innerHTML,/Prioritize /);
-  assert.equal(el('claim-role').disabled,true);
+  await click({agent:'china.climate_adviser'});
+  assert.equal(el('agent-dialog').open,true);
+  assert.equal(el('agent-title').textContent,'Climate adviser 1');
+  assert.match(el('agent-details').innerHTML,/Private preparation/);
+  assert.match(el('agent-details').innerHTML,/Decisions in Round 1/);
+  assert.match(el('agent-details').innerHTML,/What the agent observed/);
+  assert.ok(el('agent-details').innerHTML.includes(fixture.details['china.climate_adviser'].agent.private_strategy));
+  assert.equal((el('agent-details').innerHTML.match(/class="decision"/g)||[]).length,fixture.details['china.climate_adviser'].traces.length);
+  el('close-agent').handlers.click();
+  assert.equal(el('agent-dialog').open,false);
+  assert.equal(el('agent-details').innerHTML,'');
 
-  await change('viewer','china.climate_adviser');
-  assert.match(el('workspace-title').textContent,/China/);
-  assert.match(el('agent-perspective').innerHTML,/Individual-private preparation strategy/);
+  // A late reply for a previously selected member cannot replace the current member's notes.
+  delayedAgent='china.climate_adviser';
+  await click({agent:delayedAgent});
   await click({agent:'china.economic_minister'});
-  assert.match(el('agent-perspective').innerHTML,/restricted to its owner/);
-  await click({workspace:'floor'});
-  assert.equal((el('floor-roster').innerHTML.match(/data-acting=/g)||[]).length,18);
-  assert.equal(el('acting-member').disabled,true);
-  assert.match(el('clock').textContent,/5-tick ACK window/);
+  const current=el('agent-details').innerHTML;
+  resolveDelayed();await settle();
+  assert.equal(el('agent-title').textContent,'Economic minister 1');
+  assert.equal(el('agent-details').innerHTML,current);
+  el('close-agent').handlers.click();
+  delayedAgent=null;
 
-  await change('viewer','researcher');
-  await el('open-request').handlers.click();
-  assert.equal(el('meeting-dialog').open,true);
-  assert.equal(invitees.length,17);
-  assert.ok(invitees.every(i=>i.value!==el('request-sender').value));
-  invitees.find(i=>i.value==='eu.economic_minister').checked=true;
-  invitees.find(i=>i.value==='india.climate_adviser').checked=true;
-  el('request-topic').value='Cross-role coalition';
-  await el('request-form').handlers.submit({preventDefault(){}});await settle();
-  const request=posts.find(p=>p.operation==='request');
-  assert.deepEqual(request.invitees,['eu.economic_minister','india.climate_adviser']);
-  assert.equal(el('meeting-dialog').open,false);
+  // Actual transcript strings must render as text, including HTML-like model output.
+  const old=country.discussion[0].payload.speech;
+  country.discussion[0].payload.speech='<script>bad()</script>';
+  await el('retry').handlers.click();await settle();
+  await click({country:'china'});
+  assert.match(el('discussion').innerHTML,/&lt;script&gt;bad\(\)&lt;\/script&gt;/);
+  assert.doesNotMatch(el('discussion').innerHTML,/<script>/);
+  country.discussion[0].payload.speech=old;
 
-  await change('viewer','china.climate_adviser');
-  await el('claim-role').handlers.click();await settle();
-  assert.equal(el('viewer').disabled,true);
-  assert.match(el('mode-notice').textContent,/You control China/);
-  assert.match(el('floor-roster').innerHTML,/HUMAN/);
-  await el('claim-role').handlers.click();await settle();
-  assert.equal(el('viewer').disabled,false);
+  el('back-to-countries').handlers.click();
+  assert.equal(el('country-view').hidden,false);
+  assert.equal(el('discussion-view').hidden,true);
+  await click({country:'eu'});
+  assert.match(el('country-title').textContent,/European Union/);
+  assert.ok(requests.every(url=>url.startsWith('/api/round-one')));
 
-  console.log('Agent lab UI passed: roster, rounds, discussions, private-scope clearing, member types, invitations and human role controls.');
+  failNext=true;await el('retry').handlers.click();await settle();
+  assert.equal(el('error').hidden,false);
+  await el('retry').handlers.click();await settle();
+  assert.equal(el('error').hidden,true);
+  console.log('Round 1 UI passed: actual rosters, country navigation, discussion, agent records, stale-request protection and escaped dialogue.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

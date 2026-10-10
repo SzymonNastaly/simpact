@@ -1,185 +1,169 @@
 'use strict';
 (() => {
-  const $ = selector => document.querySelector(selector);
-  const $$ = selector => [...document.querySelectorAll(selector)];
+  const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const roleNames = {head_negotiator:'Head negotiator',economic_minister:'Economic minister',climate_adviser:'Climate adviser'};
-  const roleClass = role => role.startsWith('head') ? 'head' : role.startsWith('economic') ? 'economic' : 'climate';
-  const roleLetter = role => roleClass(role)[0].toUpperCase();
-  const priorities = {head_negotiator:'Diplomacy · agreements · coalitions',economic_minister:'Growth · competitiveness · finance',climate_adviser:'Emissions · climate risk · credibility'};
+  const roles = {head_negotiator:'Head negotiator',economic_minister:'Economic minister',climate_adviser:'Climate adviser'};
   const codes = {usa:'US',eu:'EU',china:'CN',india:'IN',other_developed:'OD',other_developing:'OG'};
-  const s = {scope:'researcher',country:'china',round:'1',workspace:'delegation',agent:'china.climate_adviser',acting:'china.climate_adviser',meeting:null,replay:null,hub:null,busy:false};
-  const member = id => s.replay.roster.find(a => a.agent === id);
-  const country = id => s.replay.delegations.find(d => d.id === id);
-  const memberName = id => {const a = member(id); return a ? `${country(a.delegation).name} / ${roleNames[a.role] || a.role}` : id;};
-  const shortName = id => {const a = member(id); return a ? `${codes[a.delegation]} · ${roleNames[a.role] || a.role}` : id;};
-  const controller = id => s.hub?.participants.find(p => p.id === id)?.controller || 'agent';
-  const roundData = () => s.replay.rounds[s.round];
-  const teamData = () => roundData().teams[s.country];
-  const fmtMoney = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}$${Math.abs(n).toFixed(1)}B/yr`;
-  const fmtRate = c => c ? `${c.annual_reduction_rate_percent.toFixed(2)}%` : 'Private';
-  const empty = (title,text) => `<div class="empty-state"><strong>${esc(title)}</strong>${esc(text)}</div>`;
+  const colors = {usa:'#e9ede3',eu:'#e1e8ee',china:'#efe2da',india:'#f3e8d4',other_developed:'#e9e6ef',other_developing:'#e2ece4'};
+  const stages = {prepare:'Preparation',internal:'Team discussion',mandate:'Mandate proposal',vote:'Team vote',announce:'Opening announcement'};
+  let session = null;
+  let selectedCountry = null;
+  let selectedAgent = null;
+  let agentRequest = 0;
+  let agentTrigger = null;
 
-  async function api(path, options) {
-    const response = await fetch(path, options);
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
-    return body;
+  const roleName = agent => {
+    const name = roles[agent.role] || agent.role;
+    const peers = session?.countries.find(country => country.id === agent.delegation)?.members.filter(member => member.role === agent.role) || [];
+    return peers.length > 1 ? `${name} ${peers.findIndex(member => member.agent === agent.agent) + 1}` : name;
+  };
+  const roleClass = agent => agent.role.startsWith('economic') ? 'economic' : agent.role.startsWith('climate') ? 'climate' : 'head';
+  const initials = agent => roleName(agent).split(' ').map(word => word[0]).slice(0,2).join('').toUpperCase();
+  const avatar = agent => `<span class="agent-avatar ${roleClass(agent)}" aria-hidden="true">${esc(initials(agent))}</span>`;
+  const empty = text => `<p class="empty-state">${esc(text)}</p>`;
+  const countryById = id => session.countries.find(country => country.id === id);
+
+  async function read(path) {
+    const response = await fetch(path);
+    if (!response.ok) throw new Error('The recorded session could not be loaded. Please try again.');
+    return response.json();
   }
-  function showError(error) { $('#error').textContent = error.message || String(error); $('#error').hidden = false; }
-  async function load() {
-    const [replay,hub] = await Promise.all([api(`/api/replay?scope=${encodeURIComponent(s.scope)}`),api(`/api/meetings?scope=${encodeURIComponent(s.scope)}`)]);
-    s.replay = replay; s.hub = hub; s.scope = replay.scope;
-    if (hub.human_role) s.acting = hub.human_role;
-    if (!s.replay.rounds[s.round]) s.round = Object.keys(s.replay.rounds)[0];
-    if (s.scope !== 'researcher' && s.scope !== 'public' && s.workspace === 'delegation') {
-      s.country = member(s.scope).delegation;
-      s.agent = s.scope;
-    }
-    render();
+
+  function showError(error) {
+    $('error-text').textContent = error.message;
+    $('error').hidden = false;
   }
-  async function act(operation, extras = {}) {
-    if (s.busy) return;
-    s.busy = true; $('#error').hidden = true;
-    try { await api('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({operation,actor:s.acting,...extras})}); await load(); }
-    catch (error) { showError(error); }
-    finally { s.busy = false; }
-  }
-  function options(selected) {
-    return s.replay.roster.map(a => `<option value="${esc(a.agent)}" ${a.agent === selected ? 'selected' : ''}>${esc(memberName(a.agent))}</option>`).join('');
-  }
-  function avatar(a) {return `<span class="agent-avatar ${roleClass(a.role)}" aria-hidden="true">${roleLetter(a.role)}</span>`;}
-  function policy(c) {
-    if (!c) return '<div class="private-empty">This preference is not available in this information view.</div>';
-    const rows = [['Emissions peak',c.emissions_peak_year],['Reductions start',c.reduction_start_year],['Annual reduction',fmtRate(c)],['Deforestation prevention',`${c.deforestation_prevention_percent}%`],['Afforestation',`${c.afforestation_percent}%`],['Climate finance',fmtMoney(c.climate_fund_billion_per_year)]];
-    return `<dl class="policy-list">${rows.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
-  }
-  function renderChrome() {
-    const members = s.replay.roster;
-    $('#roster-count').textContent = `${s.replay.delegations.length} / ${members.length}`;
-    $('#run-label').textContent = `${members.length} members · ${s.replay.config.backend} replay`;
-    $('#viewer').innerHTML = `<option value="researcher">Researcher · full audit</option><option value="public">Public summit</option>${options(s.scope)}`;
-    $('#viewer').value = s.scope;
-    $('#viewer').disabled = !!s.hub.human_role;
-    $('#claim-role').disabled = !s.hub.human_role && ['researcher','public'].includes(s.scope);
-    $('#claim-role').textContent = s.hub.human_role ? 'Leave human role' : 'Play this role';
-    $('#claim-role').classList.toggle('primary',!!s.hub.human_role);
-    $('#countries').innerHTML = s.replay.delegations.map(d => `<button class="country-button" type="button" data-country="${d.id}" aria-pressed="${d.id === s.country}"><span class="country-code">${codes[d.id]}</span><span class="country-copy"><span class="country-name">${esc(d.name)}</span><span class="country-meta">${d.members.length} members</span></span><span class="country-size">${d.members.length}</span></button>`).join('');
-    $('#round-switch').innerHTML = Object.keys(s.replay.rounds).map(r => `<button type="button" data-round="${r}" aria-pressed="${r === s.round}">Round ${r}</button>`).join('');
-    $('#workspace-title').textContent = s.workspace === 'delegation' ? `${country(s.country).name} delegation` : 'The negotiation floor';
-    $('#workspace-eyebrow').textContent = s.workspace === 'delegation' ? 'PRIVATE DELIBERATION → NATIONAL MANDATE' : 'MEMBER-LEVEL MEETING PROTOCOL';
-    $('#workspace-description').textContent = s.workspace === 'delegation' ? `${country(s.country).members.length} members · select a role to inspect its position and strategy.` : 'Every member can request private or group discussions—not just the head negotiators.';
-    $$('.workspace-tabs button').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.workspace === s.workspace)));
-    $('#delegation-workspace').hidden = s.workspace !== 'delegation';
-    $('#floor-workspace').hidden = s.workspace !== 'floor';
-    const offline = s.replay.config.backend === 'offline' ? 'Saved offline run · scripted agents, not Gemini.' : 'Saved Gemini run · not a live session.';
-    $('#mode-notice').classList.toggle('human-notice',!!s.hub.human_role);
-    $('#mode-notice').textContent = s.hub.human_role ? `You control ${memberName(s.hub.human_role)} in the manual meeting sandbox. Only your authorized records and meeting actions are available. No AI replies are generated.` : `${offline} ${s.scope === 'researcher' ? 'Researcher audit: includes private member preferences and team records.' : s.scope === 'public' ? 'Public view: private deliberations, preferences and meetings are unavailable.' : `Participant view: only ${memberName(s.scope)}’s private state, their team records and addressed meetings.`}`;
-    const outcome = roundData().climate_outcome;
-    $('#climate-summary').textContent = outcome ? `${outcome.is_mock ? 'MOCK, not C-ROADS. ' : ''}Round ${s.round}: ${outcome.warming_celsius.toFixed(2)}°C. ${outcome.explanation}` : 'No climate outcome recorded.';
-  }
-  function renderAgents() {
-    const team = teamData(), members = s.replay.roster.filter(a => a.delegation === s.country);
-    $('#team-summary').textContent = `${members.length} members · ${s.replay.config.composition} priorities`;
-    if (!members.some(a => a.agent === s.agent)) s.agent = members[0].agent;
-    $('#agent-cards').innerHTML = members.map(a => {
-      const position = team.positions[a.agent], support = team.mandate?.mandate.internal_support[a.agent];
-      return `<button type="button" class="agent-card" data-agent="${esc(a.agent)}" aria-pressed="${a.agent === s.agent}"><span class="agent-card-header">${avatar(a)}<span class="controller-pill ${controller(a.agent) === 'human' ? 'human' : ''}">${controller(a.agent) === 'human' ? 'HUMAN' : 'AGENT'}</span></span><h3>${esc(roleNames[a.role] || a.role)}</h3><span class="agent-priority">${esc(priorities[a.role] || a.personality)}</span><span class="agent-model">${esc(a.backend)}</span><span class="agent-position"><span class="agent-position-value">${fmtRate(position)}<span class="agent-position-label">latest shared preference</span></span>${support === undefined ? '<span class="support-label">Private team record</span>' : `<span class="support-label ${support ? '' : 'dissent'}">${support ? '✓ Approved mandate' : 'Did not approve'}</span>`}</span></button>`;
+
+  function renderCountries() {
+    $('countries').innerHTML = session.countries.map(country => {
+      const members = country.members;
+      const dots = members.slice(0,6).map(agent => `<span class="member-dot ${roleClass(agent)}" title="${esc(roleName(agent))}">${esc(initials(agent))}</span>`).join('');
+      return `<button type="button" class="country-card" data-country="${esc(country.id)}" style="--country-color:${colors[country.id] || '#edf1e9'}" aria-label="Open ${esc(country.name)}, ${members.length} agents">
+        <span class="country-card-top"><span class="country-code" aria-hidden="true">${esc(codes[country.id] || country.id.slice(0,2).toUpperCase())}</span><span class="card-arrow" aria-hidden="true">↗</span></span>
+        <span class="country-name">${esc(country.name)}</span><span class="country-meta">${members.length} ${members.length === 1 ? 'agent' : 'agents'}</span>
+        <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>`;
     }).join('');
+    const total = session.countries.reduce((sum, country) => sum + country.members.length, 0);
+    $('roster-total').textContent = `${session.countries.length} delegations · ${total} agents`;
+    $('run-caption').textContent = `${session.backend === 'offline' ? 'Recorded scripted session' : 'Recorded Gemini session'} · ${session.run}`;
   }
-  function renderDiscussion() {
-    const team = teamData();
-    $('#discussion-access').textContent = team.speeches.length ? `Round ${s.round} · ${team.speeches.length} recorded turns · team-only` : 'Not available in this information view';
-    $('#internal-transcript').innerHTML = team.speeches.length ? team.speeches.map((e,i) => {
-      const a = member(e.actor), c = e.payload.commitment;
-      return `<article class="speech ${e.actor === s.agent ? 'selected-speech' : ''}">${avatar(a)}<div class="speech-body"><div class="speech-heading"><strong>${esc(roleNames[a.role] || a.role)}</strong><span>Turn ${i+1} · ${esc(e.id)}</span></div><p class="speech-text">${esc(e.payload.speech)}</p><div class="speech-policy"><span>${fmtRate(c)} cuts/yr</span><span>Peak ${c.emissions_peak_year}</span><span>Start ${c.reduction_start_year}</span><span>${fmtMoney(c.climate_fund_billion_per_year)}</span></div></div></article>`;
-    }).join('') : empty('Private delegation room','Choose the researcher audit or a member of this delegation to inspect its internal discussion. Foreign members cannot access this transcript.');
-    const a = member(s.agent);
-    $('#inspector-role').textContent = roleNames[a.role] || a.role;
-    const preparation = a.private_strategy ? `<div class="inspector-title">Individual-private preparation strategy</div><p class="strategy">${esc(a.private_strategy)}</p>` : '<div class="private-empty">Individual-private strategy is restricted to its owner and the researcher. Team colleagues only see what was shared.</div>';
-    $('#agent-perspective').innerHTML = `<div class="inspector-content">${preparation}<div class="table-subheading">${s.round === '1' ? 'Starting private preference' : 'Starting shared position from prior round'}</div>${policy(team.starting_positions[a.agent])}<div class="table-subheading">Last position shared in this round</div>${policy(team.positions[a.agent])}</div>`;
+
+  function openCountry(id) {
+    const country = countryById(id);
+    if (!country) return;
+    selectedCountry = id;
+    $('country-view').hidden = true;
+    $('discussion-view').hidden = false;
+    $('country-title').textContent = country.name;
+    $('country-description').textContent = `${country.members.length} agents in this delegation. Select an agent to see its perspective.`;
+    $('agents').innerHTML = country.members.map(agent => `<button type="button" class="agent-button" data-agent="${esc(agent.agent)}" aria-label="Inspect ${esc(roleName(agent))}">${avatar(agent)}<span><strong>${esc(roleName(agent))}</strong><small>View agent perspective</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`).join('');
+    $('message-count').textContent = `${country.discussion.length} ${country.discussion.length === 1 ? 'message' : 'messages'}`;
+    $('discussion').innerHTML = country.discussion.length ? country.discussion.map((event,index) => {
+      const agent = country.members.find(member => member.agent === event.actor);
+      const name = agent ? roleName(agent) : event.actor;
+      const turn = country.members.length ? Math.floor(index / country.members.length) + 1 : 1;
+      return `${index % Math.max(1,country.members.length) === 0 ? `<div class="discussion-turn">Conversation ${turn}</div>` : ''}<article class="message">${agent ? avatar(agent) : ''}<div class="message-body"><button type="button" class="speaker" data-agent="${esc(event.actor)}">${esc(name)}</button><span class="message-number">${String(index + 1).padStart(2,'0')}</span><p class="message-text">${esc(event.payload.speech)}</p></div></article>`;
+    }).join('') : empty('No Round 1 discussion was recorded for this delegation.');
+    $('country-title').focus();
+    window.scrollTo({top:0});
   }
-  function renderAlignment() {
-    const team = teamData(), entries = Object.entries(team.positions);
-    if (!entries.length) {$('#alignment').innerHTML = empty('Alignment is private','No internal positions are available in this view.');renderMandate();return;}
-    const max = Math.ceil(Math.max(...entries.map(([,c]) => c.annual_reduction_rate_percent),team.mandate?.mandate.approved_commitment.annual_reduction_rate_percent || 0));
-    $('#alignment').innerHTML = `<div class="inspector-content"><div class="alignment-summary"><div><div class="inspector-title">Mean pairwise policy distance</div><div class="distance-values">${team.disagreement_before == null ? '—' : team.disagreement_before.toFixed(3)}<span>→</span>${team.disagreement_after == null ? '—' : team.disagreement_after.toFixed(3)}</div></div></div><p class="alignment-caption">Lower means closer positions across all six commitment fields. Not a consensus probability. A missing start value means private preferences are unavailable.</p>${entries.map(([id,c]) => {const a = member(id), start = team.starting_positions[id];return `<div class="alignment-row"><div class="alignment-row-label"><span>${esc(roleNames[a.role] || a.role)}</span><span>${start ? `${fmtRate(start)} → ` : ''}${fmtRate(c)}</span></div><div class="alignment-track ${roleClass(a.role)}"><span class="current-position" style="width:${Math.max(0,Math.min(100,c.annual_reduction_rate_percent/Math.max(1,max)*100))}%"></span></div></div>`;}).join('')}<div class="alignment-axis"><span>0% annual reduction</span><span>${max}%</span></div></div>`;
-    renderMandate();
+
+  function goBack() {
+    closeAgent();
+    $('discussion-view').hidden = true;
+    $('country-view').hidden = false;
+    const card = document.querySelector(`[data-country="${selectedCountry}"]`);
+    selectedCountry = null;
+    if (card) card.focus();
+    window.scrollTo({top:0});
   }
-  function renderMandate() {
-    const mandate = teamData().mandate;
-    $('#mandate-rule').textContent = mandate ? `${mandate.decision_rule === 'vote' ? 'Ranked-choice vote' : 'Leader decision'} · ${Object.values(mandate.mandate.internal_support).filter(Boolean).length}/${Object.values(mandate.mandate.internal_support).length} approve` : 'Private record';
-    if (!mandate) {$('#mandate').innerHTML = empty('National mandate is delegation-private','Public commitments are in the summit record; internal approvals and red lines are not public.');return;}
-    $('#mandate').innerHTML = `<div class="mandate-content"><div>${policy(mandate.mandate.approved_commitment)}<div class="mandate-support">${Object.entries(mandate.mandate.internal_support).map(([id,yes]) => `<span>${yes ? '✓' : '–'} ${esc(roleNames[member(id).role] || member(id).role)}</span>`).join('')}</div><p class="mandate-explanation">Selected candidate: ${esc(mandate.winning_candidate)}. Approvals were recorded individually; the leader did not invent them.</p></div><div><h3>Team priorities</h3><ul class="mandate-goals">${mandate.mandate.priorities.map(g => `<li>${esc(g)}</li>`).join('')}</ul><h3 class="table-subheading">Red lines</h3><ul class="mandate-goals">${mandate.mandate.red_lines.map(g => `<li>${esc(g)}</li>`).join('')}</ul></div></div>`;
+
+  function proposal(commitment) {
+    if (!commitment) return '';
+    const fields = [['Emissions peak',commitment.emissions_peak_year],['Reductions begin',commitment.reduction_start_year],['Annual reductions',`${commitment.annual_reduction_rate_percent}%`],['Climate finance',`${commitment.climate_fund_billion_per_year > 0 ? '+' : ''}$${commitment.climate_fund_billion_per_year}B / year`]];
+    return `<dl class="proposal">${fields.map(([label,value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>`;
   }
-  function renderFloor() {
-    $('#floor-roster').innerHTML = s.replay.delegations.map(d => `<section class="floor-country"><h3>${esc(d.name)} · ${d.members.length}</h3>${d.members.map(id => {const a = member(id);return `<button type="button" class="floor-member" data-acting="${esc(id)}" aria-pressed="${s.acting === id}" ${s.hub.human_role && s.hub.human_role !== id ? 'disabled' : ''}><span class="role-dot ${roleClass(a.role)}"></span>${esc(roleNames[a.role] || a.role)}<span class="controller-pill">${controller(id) === 'human' ? 'HUMAN' : 'AGENT'}</span></button>`;}).join('')}</section>`).join('');
-    $('#acting-member').innerHTML = options(s.acting); $('#acting-member').value = s.acting;
-    $('#acting-member').disabled = !!s.hub.human_role || !['researcher','public'].includes(s.scope);
-    $('#open-request').disabled = s.scope === 'public';
-    $('#clock').textContent = `Tick ${s.hub.tick} · ${s.hub.acknowledgement_ticks}-tick ACK window`;
-    $('#acting-note').textContent = s.hub.human_role ? 'You control only this member. Other controllers are not automated in this sandbox.' : s.scope === 'researcher' ? 'Researcher mode: manually act as any of the 18 members to test invitations and replies.' : s.scope === 'public' ? 'Select a participant or researcher perspective to access meeting actions.' : 'Actions use this member; private invitations and room messages are filtered server-side.';
-    const meetings = s.hub.meetings;
-    $('#meeting-count').textContent = `${meetings.length} visible meeting${meetings.length === 1 ? '' : 's'}`;
-    if (!meetings.some(m => m.id === s.meeting)) s.meeting = meetings[0]?.id || null;
-    $('#meeting-list').innerHTML = meetings.length ? [...meetings].reverse().map(m => {
-      const canRespond = m.status === 'pending' && m.acknowledgements[s.acting] === 'pending';
-      const canClose = ['pending','active'].includes(m.status) && [m.sender,...m.invitees].includes(s.acting);
-      const deadline = m.status === 'pending' ? `${Math.max(0,m.expires_tick-s.hub.tick)} ticks left to acknowledge` : m.status === 'expired' ? 'ACK deadline missed. Choose a new action or request another meeting.' : m.status === 'active' ? 'All invitees acknowledged · room open' : m.status === 'declined' ? 'An invitee declined. Choose another action.' : 'Conversation closed.';
-      return `<article class="meeting-item ${m.id === s.meeting ? 'selected' : ''}"><button class="meeting-select" type="button" data-meeting="${m.id}"><span class="meeting-item-top"><h3>${esc(m.topic)}</h3><span class="meeting-state ${m.status}">${m.status.toUpperCase()}</span></span><span class="meeting-names">${esc(shortName(m.sender))} → ${m.invitees.map(id => esc(shortName(id))).join(', ')}</span></button><div class="ack-list">${Object.entries(m.acknowledgements).map(([id,state]) => `<span class="ack-chip ${state}">${state === 'accepted' ? '✓' : state === 'declined' ? '×' : '…'} ${esc(shortName(id))}</span>`).join('')}</div><div class="meeting-deadline">${esc(deadline)}</div><div class="meeting-actions">${canRespond ? `<button type="button" class="button primary" data-ack="${m.id}">Acknowledge as ${esc(codes[member(s.acting).delegation])}</button><button type="button" class="button danger" data-decline="${m.id}">Decline</button>` : ''}${canClose ? `<button type="button" class="button secondary" data-close="${m.id}">Close</button>` : ''}</div></article>`;
-    }).join('') : empty('No visible meeting requests','Request a one-to-one conversation or invite a cross-delegation group. Only the sender, invitees and researcher can see a private request.');
-    renderRoom();
-    $('#public-transcript').innerHTML = roundData().public_events.filter(e => e.kind === 'summit_speech').map(e => {const a = member(e.actor);return `<article class="speech">${avatar(a)}<div class="speech-body"><div class="speech-heading"><strong>${esc(memberName(e.actor))}</strong><span>PUBLIC · ${esc(e.id)}</span></div><p class="speech-text">${esc(e.payload.speech)}</p></div></article>`;}).join('') || empty('No public statements','No public statements were recorded in this round.');
+
+  function observation(event) {
+    const p = event.payload;
+    let text = p.speech || p.private_strategy || p.summary;
+    if (!text && p.meeting) text = p.meeting.topic;
+    if (!text && p.mandate) text = (p.mandate.priorities || []).join(' · ');
+    if (!text && p.ranked_candidates) text = `Ranked candidates: ${p.ranked_candidates.join(', ')}`;
+    if (!text && p.commitments) text = 'The delegations’ published commitments.';
+    return `<div class="observation"><div class="evidence-label">${esc(event.kind.replaceAll('_',' '))} · ${esc(event.id)}</div>${text ? `<p>${esc(text)}</p>` : '<p>This observation has no recorded dialogue.</p>'}</div>`;
   }
-  function renderRoom() {
-    const meeting = s.hub.meetings.find(m => m.id === s.meeting);
-    $('#room-title').textContent = meeting ? meeting.topic : 'Private room';
-    $('#room-status').textContent = meeting ? `${meeting.id} · ${meeting.status}` : 'Select a meeting';
-    $('#room-members').innerHTML = meeting ? `<div class="room-members">${[meeting.sender,...meeting.invitees].map(id => esc(memberName(id))).join('<br>')}<br><strong>Participant-only visibility</strong></div>` : '';
-    $('#room-messages').innerHTML = meeting?.messages.length ? `<div class="room-chat">${meeting.messages.map(m => `<article class="room-message"><div class="room-message-heading"><span>${esc(memberName(m.actor))}</span><span>Tick ${m.tick}</span></div><div class="room-message-text">${esc(m.text)}</div></article>`).join('')}</div>` : empty(meeting?.status === 'pending' ? 'Waiting for acknowledgements' : meeting?.status === 'expired' ? 'Request expired' : meeting?.status === 'active' ? 'The private room is open' : 'No conversation selected',meeting?.status === 'pending' ? 'Conversation cannot begin until every invitee accepts. Switch the acting participant to acknowledge, or advance the clock to test expiry.' : meeting?.status === 'active' ? 'Send a message as a participant. Outsiders, including teammates who were not invited, cannot read this room.' : 'Choose an active meeting to discuss with its participants.');
-    const canSend = meeting?.status === 'active' && [meeting.sender,...meeting.invitees].includes(s.acting) && s.scope !== 'public';
-    $('#meeting-message').disabled = !canSend; $('#send-message').disabled = !canSend;
-    $('#message-note').textContent = canSend ? `Sending as ${shortName(s.acting)}` : 'Only acknowledged meeting participants can send.';
+
+  function decision(event,index) {
+    const trace = event.payload;
+    const summary = trace.decision_summary;
+    const action = trace.action || {};
+    const cited = new Set(summary?.evidence_event_ids || []);
+    const evidence = (trace.observations || []).filter(item => cited.has(item.id));
+    const observations = trace.observations || [];
+    return `<article class="decision"><div class="decision-stage">${String(index + 1).padStart(2,'0')} · ${esc(stages[trace.stage] || trace.stage)}</div>
+      <p>${esc(summary?.summary || 'No decision summary was recorded for this action.')}</p>
+      ${summary?.intended_action ? `<p class="intention">Intended action · ${esc(summary.intended_action)}</p>` : ''}
+      ${evidence.length ? `<details><summary>Evidence behind this decision · ${evidence.length}</summary><div class="evidence">${evidence.map(observation).join('')}</div></details>` : ''}
+      <details><summary>What the agent observed · ${observations.length}</summary><div class="evidence">${observations.length ? observations.map(observation).join('') : '<p>No earlier observations were recorded.</p>'}</div></details>
+      ${(action.speech || action.commitment || action.mandate || action.ranked_candidates?.length) ? `<details><summary>What the agent decided</summary><div class="evidence">${action.speech ? `<p>${esc(action.speech)}</p>` : ''}${proposal(action.commitment || action.mandate?.approved_commitment)}${action.ranked_candidates?.length ? `<p>Candidate ranking: ${action.ranked_candidates.map(esc).join(' → ')}</p>` : ''}</div></details>` : ''}</article>`;
   }
-  function render() {renderChrome();renderAgents();renderDiscussion();renderAlignment();renderFloor();}
-  function renderInvitees() {
-    const sender = $('#request-sender').value;
-    $('#invitees').innerHTML = s.replay.delegations.map(d => d.members.filter(id => id !== sender).map(id => `<label class="invitee-row"><input type="checkbox" name="invitee" value="${esc(id)}"><span class="role-dot ${roleClass(member(id).role)}"></span>${esc(shortName(id))}</label>`).join('')).join('');
-    $('#invitation-count').textContent = 'No invitees selected';
+
+  async function openAgent(id,trigger) {
+    const country = countryById(selectedCountry);
+    const agent = country?.members.find(member => member.agent === id);
+    if (!agent) return;
+    selectedAgent = id;
+    agentTrigger = trigger;
+    const request = ++agentRequest;
+    $('agent-country').textContent = `${country.name} · Round 1`;
+    $('agent-title').textContent = roleName(agent);
+    $('agent-details').innerHTML = '<p class="loading">Loading this agent’s recorded perspective…</p>';
+    if (!$('agent-dialog').open) $('agent-dialog').showModal();
+    try {
+      const data = await read(`/api/round-one/agent?scope=researcher&agent=${encodeURIComponent(id)}`);
+      if (request !== agentRequest || selectedAgent !== id) return;
+      const detail = data.agent;
+      const traces = data.traces.filter(event => event.round === 1 && event.actor === id && stages[event.payload.stage]);
+      const scripted = detail.backend === 'offline-scripted-v1';
+      $('agent-details').innerHTML = `<p class="agent-source">${scripted ? 'Scripted agent · recorded policy summaries' : 'Gemini agent · recorded decision summaries'}</p>
+        <section class="detail-section"><h3>Priorities</h3><p>${esc(detail.personality)}</p></section>
+        <section class="detail-section preparation"><h3>Private preparation</h3><p>${esc(detail.private_strategy || 'No preparation notes were recorded for this agent.')}</p>${detail.initial_preference ? `<details><summary>Starting proposal</summary>${proposal(detail.initial_preference)}</details>` : ''}</section>
+        <section class="detail-section"><h3>Decisions in Round 1</h3>${traces.length ? traces.map(decision).join('') : empty('This run has no recorded decision summaries. The preparation notes above are the available record.')}</section>`;
+    } catch (error) {
+      if (request === agentRequest && selectedAgent === id) $('agent-details').innerHTML = empty(error.message);
+    }
   }
-  document.addEventListener('click', event => {
-    const b = event.target.closest('button'); if (!b || b.disabled) return;
-    if (b.dataset.country) {s.country = b.dataset.country;s.workspace = 'delegation';s.agent = country(s.country).members[0];render();}
-    if (b.dataset.round) {s.round = b.dataset.round;render();}
-    if (b.dataset.agent) {s.agent = b.dataset.agent;render();}
-    if (b.dataset.workspace) {s.workspace = b.dataset.workspace;render();}
-    if (b.dataset.acting) {s.acting = b.dataset.acting; if (!['researcher','public'].includes(s.scope)) {s.scope = s.acting;load().catch(showError);} else renderFloor();}
-    if (b.dataset.meeting) {s.meeting = b.dataset.meeting;renderFloor();}
-    if (b.dataset.ack) act('respond',{meeting_id:b.dataset.ack,accepted:true});
-    if (b.dataset.decline) act('respond',{meeting_id:b.dataset.decline,accepted:false});
-    if (b.dataset.close) act('close',{meeting_id:b.dataset.close});
+
+  function closeAgent() {
+    ++agentRequest;
+    selectedAgent = null;
+    if ($('agent-dialog').open) $('agent-dialog').close();
+    $('agent-details').innerHTML = '';
+    if (agentTrigger?.isConnected) agentTrigger.focus();
+    agentTrigger = null;
+  }
+
+  async function load() {
+    $('error').hidden = true;
+    $('retry').disabled = true;
+    try {
+      session = await read('/api/round-one?scope=researcher');
+      if (session.round !== 1 || !Array.isArray(session.countries)) throw new Error('The Round 1 record is unavailable.');
+      renderCountries();
+    } catch (error) { $('roster-total').textContent = 'Session unavailable'; showError(error); }
+    finally { $('retry').disabled = false; }
+  }
+
+  document.addEventListener('click',event => {
+    const button = event.target.closest('button[data-country], button[data-agent]');
+    if (!button) return;
+    if (button.dataset.country) openCountry(button.dataset.country);
+    else if (button.dataset.agent) openAgent(button.dataset.agent,button);
   });
-  $('#viewer').addEventListener('change', async event => {
-    s.scope = event.target.value;
-    if (!['researcher','public'].includes(s.scope)) s.acting = s.scope;
-    try {await load();} catch(error) {showError(error);}
-  });
-  $('#acting-member').addEventListener('change', event => {s.acting = event.target.value;renderFloor();});
-  $('#advance-tick').addEventListener('click', () => act('advance'));
-  $('#claim-role').addEventListener('click', async () => {
-    if (s.hub.human_role) {await act('release');s.scope = 'researcher';await load();}
-    else {s.acting = s.scope;await act('claim');}
-  });
-  $('#open-request').addEventListener('click', () => {$('#request-sender').innerHTML = options(s.acting);$('#request-sender').value = s.acting;$('#request-sender').disabled = !!s.hub.human_role || s.scope !== 'researcher';renderInvitees();$('#meeting-dialog').showModal();});
-  $('#close-dialog').addEventListener('click', () => $('#meeting-dialog').close());
-  $('#request-sender').addEventListener('change', renderInvitees);
-  $('#invitees').addEventListener('change', () => {const n = $$('#invitees input:checked').length;$('#invitation-count').textContent = `${n} invitee${n === 1 ? '' : 's'} selected`;});
-  $('#request-form').addEventListener('submit', async event => {
-    event.preventDefault();const invitees = $$('#invitees input:checked').map(i => i.value);
-    if (!invitees.length) {showError(new Error('Select at least one invitee.'));$('#meeting-dialog').close();return;}
-    s.acting = $('#request-sender').value;
-    await act('request',{invitees,topic:$('#request-topic').value});$('#meeting-dialog').close();$('#request-topic').value = '';
-  });
-  $('#message-form').addEventListener('submit', async event => {event.preventDefault();const text = $('#meeting-message').value;if (!text.trim()) return;await act('message',{meeting_id:s.meeting,text});$('#meeting-message').value = '';});
-  load().catch(showError);
+  $('back-to-countries').addEventListener('click',goBack);
+  $('close-agent').addEventListener('click',closeAgent);
+  $('agent-dialog').addEventListener('close',() => { ++agentRequest; selectedAgent = null; $('agent-details').innerHTML = ''; });
+  $('retry').addEventListener('click',load);
+  load();
 })();
