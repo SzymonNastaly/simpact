@@ -117,15 +117,16 @@ def calculate_metrics(sim: Simulation) -> dict:
                    "rounds_completed": max(sim.commitments), "finance": finance,
                    "mean_commitment_change": mean(policy_distance(initial[k], final[k]) for k in final),
                    "offer_status_counts": dict(status_counts), "agreements_fulfilled": len(fulfilled),
-                   "meetings": {"requested": len(meetings), "status_counts": dict(Counter(m.status for m in meetings)),
+                   "meetings": {"held": len(meetings), "mutual": sum(m.mutual for m in meetings),
+                                "close_reasons": dict(Counter(m.close_reason for m in meetings)),
                                 "messages": sum(len(m.messages) for m in meetings),
                                 "cross_delegation": sum(len({delegation_of[p] for p in m.participants}) > 1 for m in meetings),
-                                "non_spokesperson_senders": sum(sim.agents[m.sender].role != Role.HEAD for m in meetings),
+                                "non_spokesperson_openers": sum(sim.agents[m.initiator].role != Role.HEAD for m in meetings),
                                 "with_observers": sum(any(sim.agents[p].role == Role.OBSERVER for p in m.participants) for m in meetings)},
                    "observers": {member.name: {
                        "statements": sum(e.kind == "observer_statement" and e.actor == member.name for e in sim.store.events),
-                       "meetings_requested": sum(m.sender == member.name for m in meetings),
-                       "meetings_held": sum(member.name in m.participants and m.status in ("active", "closed") and bool(m.messages) for m in meetings),
+                       "meetings_opened": sum(m.initiator == member.name for m in meetings),
+                       "meetings_held": sum(member.name in m.participants and bool(m.messages) for m in meetings),
                        "delegates_met": sorted({p for m in meetings if member.name in m.participants and m.messages
                                                 for p in m.participants if p != member.name})}
                        for member in sim.observers},
@@ -144,7 +145,7 @@ def render_report(sim: Simulation, metrics: dict) -> str:
         f"Below 2°C: {global_metrics['target_2c_achieved']}. At/below 1.5°C: {global_metrics['target_1_5c_achieved']}.",
         f"Finance: {finance['contributions_billion_per_year']:.1f} billion/year contributed; {finance['requests_billion_per_year']:.1f} requested; gap {finance['funding_gap_billion_per_year']:.1f}.",
         f"Fulfilled agreements: {global_metrics['agreements_fulfilled']}; offer states: {global_metrics['offer_status_counts']}.",
-        f"Member meetings: {global_metrics['meetings']['requested']} requested {global_metrics['meetings']['status_counts']}; "
+        f"Bilaterals: {global_metrics['meetings']['held']} held ({global_metrics['meetings']['mutual']} mutually requested), ended by {global_metrics['meetings']['close_reasons']}; "
         f"{global_metrics['meetings']['messages']} messages; {global_metrics['meetings']['cross_delegation']} across delegations; "
         f"{global_metrics['meetings']['with_observers']} with observers.",
         *[f"Observer {sim.agents[name].brief.title}: {o['statements']} public statements; met {', '.join(o['delegates_met']) or 'nobody'}."

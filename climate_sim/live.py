@@ -43,9 +43,9 @@ class LiveLab(Lab):
                 GeminiBackend(config.agent_models.get(name, config.default_model),
                               thinking_level=thinking_level, include_thoughts=True, max_output_tokens=8192))
         self.sim = Simulation(config, output=output, backend_factory=backend_factory)
-        self.events, self.briefs, self.hub = self.sim.store.events, self.sim.briefs, self.sim.hub
+        self.events, self.briefs = self.sim.store.events, self.sim.briefs
         self.observer_briefs = self.sim.observer_briefs
-        self.output, self.human_role = resume or output, None
+        self.output = resume or output
         self.run_name = self.output.name if self.output else "live-round-one"
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
@@ -125,8 +125,6 @@ class LiveLab(Lab):
         with self.condition:
             if self._closed:
                 raise ValueError("Live session is closed")
-            if self.human_role:
-                raise PermissionError("Live controls require the researcher view")
             region = action.get("country")
             if region not in self.controls:
                 raise ValueError("Unknown country")

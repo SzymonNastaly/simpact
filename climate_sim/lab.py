@@ -18,8 +18,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .agents import policy_distance
 from .briefs import load_briefs, load_observers
-from .meetings import MeetingHub, Participant
-from .memory import Event, EventStore
+from .meetings import fold_meetings
+from .memory import Event
 from .metrics import dispersion
 from .models import ClimateCommitment
 
@@ -28,19 +28,13 @@ WEB = ROOT / "frontend"
 
 
 class Lab:
-    def __init__(self, run: Path, *, output: Path | None = None):
+    def __init__(self, run: Path):
         self.state = json.loads((run / "state.json").read_text())
         self.events = [Event.model_validate_json(line) for line in (run / "events.jsonl").read_text().splitlines()]
         config = self.state["config"]
         self.briefs = load_briefs(us_variant=config["us_variant"], world=config.get("world", "six"))
         self.observer_briefs = load_observers(config.get("observers", []))
         self.lock = threading.RLock()
-        participants = [Participant(id=key, delegation=agent["delegation"], role=agent["role"],
-                                   model=agent["backend"]) for key, agent in self.state["agents"].items()]
-        if output:
-            output.mkdir(mode=0o700, parents=True, exist_ok=False)
-        self.hub = MeetingHub(participants, store=EventStore(output / "meetings.jsonl" if output else None))
-        self.human_role: str | None = None
         self.run_name = run.name
 
     def replay(self, scope: str = "public") -> dict:
@@ -87,15 +81,12 @@ class Lab:
                     "pairwise_distance": [{"a": a, "b": b, "distance": policy_distance(ClimateCommitment.model_validate(ca), ClimateCommitment.model_validate(cb))}
                         for a, ca in last_positions.items() for b, cb in last_positions.items() if a < b]}
             # Filtered events preserve exact participant scopes for saved conversations.
-            meetings = {e.payload["meeting"]["id"]: e.payload["meeting"] for e in round_events
-                        if e.kind.startswith("meeting_") and "meeting" in e.payload}
-            rounds[str(round_number)] = {"teams": teams, "meetings": list(meetings.values()),
+            rounds[str(round_number)] = {"teams": teams, "meetings": list(fold_meetings(round_events).values()),
                 "traces": [self.trace_overview(e) for e in round_events if e.kind == "agent_trace"],
                 "timeline": [self.trace_overview(e) if e.kind == "agent_trace" else e.model_dump(mode="json") for e in round_events if e.kind in (
                     "individual_preparation", "internal_speech", "agent_trace", "internal_ballot",
-                    "national_mandate", "summit_speech", "meeting_requested", "meeting_acknowledged",
-                    "meeting_declined", "meeting_message", "meeting_closed", "meeting_expired",
-                    "meeting_outcome_reported", "team_meeting_report", "meeting_action_rejected", "observer_statement")],
+                    "national_mandate", "summit_speech", "bilateral_nominations", "bilateral_unmatched", "meeting_opened",
+                    "meeting_message", "meeting_closed", "team_meeting_report", "observer_statement")],
                 "notifications": [e.model_dump(mode="json") for e in round_events if e.kind == "team_meeting_report"],
                 "public_events": [e.model_dump(mode="json") for e in round_events if e.visibility == "public" and e.kind in ("summit_speech", "observer_statement", "commitments", "negotiation_offer")],
                 "climate_outcome": self.state["outcomes_by_round"].get(str(round_number))}
@@ -104,8 +95,8 @@ class Lab:
                                 "members": [x["agent"] for x in roster if x["delegation"] == k]} for k, b in self.briefs.items()],
                 "observers": [{"id": k, "name": b.title, "goals": b.goals,
                                "members": [x["agent"] for x in roster if x["delegation"] == k]} for k, b in self.observer_briefs.items()],
-                "rounds": rounds, "human_role": self.human_role,
-                "notice": "Researcher replay of saved agent actions. Offline-scripted models are not Gemini. Meeting sandbox is manual; no LLM calls. Localhost only; no multi-user authentication."}
+                "rounds": rounds,
+                "notice": "Researcher replay of saved agent actions. Offline-scripted models are not Gemini. Opening the viewer makes no LLM calls. Localhost only; no multi-user authentication."}
 
     @staticmethod
     def trace_overview(event: Event) -> dict:
@@ -190,45 +181,7 @@ class Lab:
         return event.model_dump(mode="json")
 
     def act(self, action: dict) -> dict:
-        with self.lock:
-            operation = action["operation"]
-            actor = action.get("actor")
-            if self.human_role and operation not in ("release", "advance") and actor != self.human_role:
-                raise PermissionError("While playing a role, actions must use that participant")
-            if operation == "request":
-                self.hub.round_number = int(action.get("round", 1))
-                if str(self.hub.round_number) not in self.state["commitments_by_round"]:
-                    raise ValueError("Unknown round")
-                self.hub.request(actor, action["invitees"], action["topic"])
-            elif operation == "respond":
-                if not isinstance(action.get("accepted"), bool):
-                    raise ValueError("Acknowledgement must be a boolean")
-                self.hub.respond(actor, action["meeting_id"], action["accepted"])
-            elif operation == "message":
-                self.hub.message(actor, action["meeting_id"], action["text"])
-            elif operation == "close":
-                self.hub.close(actor, action["meeting_id"])
-            elif operation == "report":
-                self.hub.report(actor, action["meeting_id"], action["summary"],
-                    agreements=action.get("agreements", []), next_steps=action.get("next_steps", []),
-                    notify_team=action.get("notify_team", True))
-            elif operation == "advance":
-                self.hub.advance(action.get("ticks", 1))
-            elif operation == "claim":
-                self.hub._known(actor)
-                self.human_role = actor
-                self.hub.participants[actor].controller = "human"
-                self.hub.store.append("human_role_claimed", {"participant": actor, "controller": "human", "manual_sandbox": True},
-                                      round=1, visibility="public", actor=actor)
-            elif operation == "release":
-                if self.human_role:
-                    actor = self.human_role
-                    self.hub.participants[actor].controller = "agent"
-                    self.human_role = None
-                    self.hub.store.append("human_role_released", {"participant": actor}, round=1, visibility="public", actor=actor)
-            else:
-                raise ValueError("Unknown meeting operation")
-            return {"human_role": self.human_role, "tick": self.hub.tick}
+        raise PermissionError("Recorded sessions are read-only")
 
 
 def server_for(lab: Lab, port: int) -> ThreadingHTTPServer:
@@ -259,8 +212,6 @@ def server_for(lab: Lab, port: int) -> ThreadingHTTPServer:
             scope = parse_qs(parsed.query).get("scope", ["public"])[0]
             try:
                 with lab.lock:
-                    if lab.human_role:
-                        scope = lab.human_role
                     if parsed.path == "/api/replay":
                         return self.send_json(200, lab.replay(scope))
                     if parsed.path == "/api/round-one":
@@ -274,17 +225,6 @@ def server_for(lab: Lab, port: int) -> ThreadingHTTPServer:
                     if parsed.path == "/api/trace":
                         event_id = parse_qs(parsed.query).get("id", [""])[0]
                         return self.send_json(200, lab.trace(event_id, scope))
-                    if parsed.path == "/api/meetings":
-                        if scope == "public":
-                            data = {"tick": lab.hub.tick, "acknowledgement_ticks": lab.hub.acknowledgement_ticks,
-                                    "participants": [p.model_dump(mode="json") for p in lab.hub.participants.values()], "meetings": [], "notifications": []}
-                        else:
-                            data = lab.hub.view(scope, researcher=scope == "researcher")
-                            saved_notifications = [e.model_dump(mode="json") for e in lab.events
-                                if e.kind == "team_meeting_report" and (scope == "researcher" or
-                                    e.visible_to(scope, lab.state["agents"][scope]["delegation"]))]
-                            data["notifications"] = saved_notifications + data["notifications"]
-                        return self.send_json(200, {**data, "human_role": lab.human_role})
                 files = {"/": ("index.html", "text/html; charset=utf-8"),
                          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                          "/styles.css": ("styles.css", "text/css; charset=utf-8")}
@@ -344,7 +284,7 @@ def main():
                       message_budget=args.message_budget, resume=args.resume_live,
                       output=None if args.resume_live else ROOT / "runs" / f"round-one-live-{stamp}")
     else:
-        lab = Lab(args.run, output=ROOT / "runs" / f"meeting-lab-{stamp}")
+        lab = Lab(args.run)
     server = server_for(lab, args.port)
     print(f"Round 1 viewer: http://127.0.0.1:{server.server_address[1]}/", flush=True)
     print("Live session: Start a country to generate messages." if args.live else "Recorded delegation discussions and agent perspectives.", flush=True)

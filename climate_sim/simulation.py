@@ -6,12 +6,13 @@ import json
 from pathlib import Path
 from typing import Callable
 
+from .bilaterals import Bilaterals, STAGES as BILATERAL_STAGES
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
 from .briefs import load_briefs, load_observers, DEFAULT_BRIEFS
 from .evaluator import ClimateEvaluator, MockClimateEvaluator, commitment_digest
 from .meetings import MeetingHub, Participant
 from .memory import EventStore, write_json
-from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MeetingAction, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
+from .models import Brief, ClimateCommitment, ClimateOutcome, DelegationId, MemberAction, NegotiationOffer, Role, SimulationConfig, TeamMandate
 from .scenes import run_scene
 from .voting import ranked_choice
 
@@ -72,13 +73,11 @@ class Simulation:
         if set(config.agent_models) - set(self.agents):
             raise ValueError("Per-agent model map contains unknown member IDs")
         self.heads = [members[0] for members in self.teams.values()]
-        # One clock for every meeting phase, so meeting IDs and deadlines stay unique across rounds.
+        # One registry for every round's bilaterals, so meeting IDs stay unique.
         self.hub = MeetingHub([Participant(id=name, delegation=m.brief.delegation.value, role=m.role.value,
                                            model=m.backend.label) for name, m in self.agents.items()],
                               store=self.store)
-        self._meeting_start_tick = 0
-        self.meeting_hub = self.hub
-        self.floor_step = 0
+        self.bilaterals: Bilaterals | None = None
         self.store.append("configuration", {"config": config.model_dump(mode="json"),
                           "agent_models": self._model_registry,
                           "sources": {k: {"file": b.source_file, "sha256": b.source_sha256, "license": b.license, "attribution": b.attribution}
@@ -113,26 +112,19 @@ class Simulation:
             result["mandate"] = self.mandates[region].model_dump(mode="json")
         if region in self._candidates:
             result["candidates"] = {k: c.model_dump(mode="json") for k, c in self._candidates[region].items()}
-        result["member_meetings"] = self.meeting_hub.view(member.name)
-        if self.stage == "member_floor":
-            result["floor_step"] = self.floor_step
-        if self.stage == "meet":
-            # Live protocol state, like shared_positions: only meetings this member sends or is invited to.
-            result["meetings"] = self.hub.view(member.name)["meetings"]
-            result["directory"] = [{"id": name, "delegation": m.brief.delegation.value, "role": m.role.value}
-                                   for name, m in self.agents.items() if name != member.name]
-            result.update(tick=self.hub.tick, phase_tick=self.hub.tick - self._meeting_start_tick,
-                          acknowledgement_ticks=self.hub.acknowledgement_ticks)
+        if self.bilaterals and self.stage in BILATERAL_STAGES:
+            # Live protocol state, like shared_positions: only this member's own meeting.
+            result.update(self.bilaterals.context(member.name, self.stage))
         return result
 
     def _scene(self, stage: str, participants: list[DelegationMember], *, simultaneous=False,
                turns=1, resolve: Callable[[dict[str, MemberAction]], None]):
         self.stage = stage
         regions = {m.brief.delegation.value for m in participants}
-        visibility = "individual" if stage in ("prepare", "meet") else ("delegation" if stage in ("internal", "mandate", "vote") else "public")
+        visibility = "individual" if stage in ("prepare", *BILATERAL_STAGES) else ("delegation" if stage in ("internal", "mandate", "vote") else "public")
         owners = [m.name for m in participants] if visibility == "individual" else (sorted(regions) if visibility == "delegation" else [])
-        if stage == "meet":
-            owners = ["researcher"]  # who is busy in meetings is itself private
+        if stage in BILATERAL_STAGES:
+            owners = ["researcher"]  # who meets whom is itself private
         self.store.append("scene_started", {"stage": stage, "participants": [m.name for m in participants],
                           "engine": "concordia.simultaneous" if simultaneous else "concordia.sequential", "turns": turns},
                           round=self.current_round, visibility=visibility, owners=owners)
@@ -214,43 +206,19 @@ class Simulation:
                           round=self.current_round, visibility="delegation", owners=[region])
         del self._candidates[region]
 
-    def _meet(self):
-        """Member-to-member meetings across roles and delegations, under the meetings.py protocol. Everyone may
-        act on the first tick; after that only members with an invitation to answer or an active meeting do."""
-        if not self.config.member_meetings or not self.config.meeting_ticks:
+    def _bilaterals(self):
+        """One-to-one conversations between members (see bilaterals.py), partners chosen by the members."""
+        if not self.config.bilateral_slots:
             return
-        self.hub.round_number = self.current_round
-        self._meeting_start_tick = self.hub.tick
-        def resolve(actions):
-            for name, action in actions.items():
-                for move in action.meeting_actions:
-                    try:
-                        self._apply_meeting_action(name, move)
-                    except (ValueError, PermissionError) as error:
-                        # Simultaneous moves can collide (e.g. a close and a message); tell only the mover.
-                        self.store.append("meeting_action_rejected", {"tick": self.hub.tick, "action": move.model_dump(mode="json"),
-                                          "error": str(error)}, round=self.current_round, visibility="individual",
-                                          owners=[name], actor=name)
-        participants = list(self.agents.values())
-        for _ in range(self.config.meeting_ticks):
-            self._scene("meet", participants, simultaneous=True, resolve=resolve)
-            self.hub.advance(1)
-            busy = {p for m in self.hub.meetings.values() if m.status == "active" for p in m.participants}
-            busy |= {p for m in self.hub.meetings.values() if m.status == "pending"
-                     for p, state in m.acknowledgements.items() if state == "pending"}
-            participants = [m for name, m in self.agents.items() if name in busy]
-            if not participants:
-                break
-
-    def _apply_meeting_action(self, actor: str, move: MeetingAction):
-        if move.operation == "request":
-            self.hub.request(actor, move.invitees, move.topic)
-        elif move.operation == "respond":
-            self.hub.respond(actor, move.meeting_id, bool(move.accepted))
-        elif move.operation == "message":
-            self.hub.message(actor, move.meeting_id, move.text)
-        else:
-            self.hub.close(actor, move.meeting_id)
+        self.bilaterals = Bilaterals(self.hub, self.store, round_number=self.current_round,
+                                     slots=self.config.bilateral_slots, message_limit=self.config.bilateral_messages)
+        while due := self.bilaterals.due():
+            for stage in BILATERAL_STAGES:
+                members = [self.agents[name] for step, name in due if step == stage]
+                if members:
+                    self._scene(stage, members, simultaneous=True,
+                                resolve=lambda actions, stage=stage: self.bilaterals.resolve(stage, actions))
+        self.bilaterals = None
 
     def _press(self):
         """Observers react in public to the commitments and mock outcome just published."""
@@ -326,39 +294,6 @@ class Simulation:
         self.outcomes[self.current_round] = outcome
         self.store.append("climate_outcome", outcome.model_dump(mode="json"), round=self.current_round, visibility="public")
 
-    def _member_floor(self):
-        if not self.config.member_meetings or not self.config.meeting_ticks or not self.config.member_floor_ticks:
-            return
-        self.meeting_hub.round_number = self.current_round
-        for step in range(self.config.member_floor_ticks):
-            self.floor_step = step
-            def resolve(actions):
-                # Apply conversations before closures so a simultaneous close cannot
-                # retroactively invalidate another member's same-tick message.
-                for operation in ("request", "respond", "message", "report", "close"):
-                    for name, action in sorted(actions.items()):
-                        tasks = {
-                            "request": [(r.invitees, r.topic) for r in action.meeting_requests],
-                            "respond": [(key, value == "accept") for key, value in action.meeting_acknowledgements.items()],
-                            "message": [(m.meeting_id, m.text) for m in action.meeting_messages],
-                            "report": list(action.meeting_reports),
-                            "close": [(key,) for key in action.close_meetings],
-                        }[operation]
-                        for task in tasks:
-                            try:
-                                if operation == "report":
-                                    self.meeting_hub.report(name, task.meeting_id, task.summary,
-                                        agreements=task.agreements, next_steps=task.next_steps, notify_team=task.notify_team)
-                                else:
-                                    getattr(self.meeting_hub, operation)(name, *task)
-                            except (ValueError, PermissionError):
-                                # Auditable rejected transitions, never fabricate an ACK.
-                                self.store.append("meeting_action_rejected", {"operation": operation,
-                                    "tick": self.meeting_hub.tick, "reason": "Unauthorized or no longer valid protocol transition"},
-                                    round=self.current_round, visibility="individual", owners=[name], actor=name)
-            self._scene("member_floor", list(self.agents.values()), simultaneous=True, resolve=resolve)
-            self.meeting_hub.advance()
-
     def _settle_offers(self):
         final = self.commitments[self.current_round]
         for offer in self.offers.values():
@@ -385,19 +320,17 @@ class Simulation:
             for round_number in range(2, self.config.rounds + 1):
                 # International offers inform the next private team deliberation.
                 self._negotiate()
-                self._member_floor()
                 self.current_round = round_number
                 for offer in self.offers.values():
                     if offer.expires_after_round < round_number and offer.status in ("proposed", "accepted"):
                         offer.status = "expired"
                         self._offer_event(offer)
-                # Team meetings and negotiations (World Climate's round 2+): members reach out before deliberating.
-                self._meet()
+                # Bilaterals (World Climate's round 2+): members reach out before their team deliberates.
+                self._bilaterals()
                 for region in self.teams:
                     self._internal(region)
                     self._mandate(region)
                 self._negotiate()
-                self._member_floor()
                 self._submit("submit")
                 self._press()
                 if self.config.stop_on_target and self.outcomes[round_number].target_2c_achieved:
@@ -412,8 +345,7 @@ class Simulation:
                      "commitments_by_round": {str(r): {k: c.model_dump(mode="json") for k, c in cs.items()} for r, cs in self.commitments.items()},
                      "outcomes_by_round": {str(r): out.model_dump(mode="json") for r, out in self.outcomes.items()},
                      "offers": [{**o.model_dump(mode="json"), "accepted_by": sorted(self.accepted_by[o.id]), "rejected_by": sorted(self.rejected_by[o.id])} for o in self.offers.values()],
-                     "meeting_tick": self.meeting_hub.tick,
-                     "meetings": self.hub.view(researcher=True),
+                     "meetings": [m.model_dump(mode="json") for m in self.hub.meetings.values()],
                      "metrics": metrics}
             if self.output:
                 write_json(self.output / "state.json", state)

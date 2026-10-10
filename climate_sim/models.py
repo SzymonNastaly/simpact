@@ -218,8 +218,9 @@ class SimulationConfig(Model):
     negotiation_turns: int = Field(default=1, ge=1, le=10)
     offer_visibility: Literal["mixed", "public", "private"] = "mixed"
     memory_length: int = Field(default=100, ge=1, le=10000)
-    # Ticks of member-to-member meetings before each later round's team deliberation; 0 turns them off.
-    meeting_ticks: int = Field(default=6, ge=0, le=20)
+    # Bilaterals before each later round's team discussion (see bilaterals.py); 0 slots turns them off.
+    bilateral_slots: int = Field(default=2, ge=0, le=5)
+    bilateral_messages: int = Field(default=8, ge=2, le=30)
     backend: Literal["offline", "gemini"] = "offline"
     default_model: str = "gemini-3.8-flash"
     agent_models: dict[str, str] = Field(default_factory=dict)
@@ -227,9 +228,6 @@ class SimulationConfig(Model):
     world: Literal["six", "eight"] = "six"
     observers: list[ObserverId] = Field(default_factory=list)
     stop_on_target: bool = False
-    member_meetings: bool = True
-    # Additional group-floor scenes are opt-in; the default scheduler uses meeting_ticks.
-    member_floor_ticks: int = Field(default=0, ge=0, le=10)
 
 
 class DecisionSummary(Model):
@@ -240,32 +238,17 @@ class DecisionSummary(Model):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
-class MeetingInvitation(Model):
-    invitees: list[str] = Field(min_length=1, max_length=17)
+class PartnerRequest(Model):
+    """Someone a member wants to meet one to one, and why."""
+    member: str = Field(min_length=1, max_length=120)
     topic: str = Field(min_length=1, max_length=300)
 
 
-class MeetingMessage(Model):
-    meeting_id: str
-    text: str = Field(min_length=1, max_length=4000)
-
-
 class MeetingReport(Model):
-    meeting_id: str
+    """What a participant tells its own team after a bilateral; their account, not a verified agreement."""
     summary: str = Field(min_length=1, max_length=1200)
     agreements: list[str] = Field(default_factory=list, max_length=5)
     next_steps: list[str] = Field(default_factory=list, max_length=5)
-    notify_team: bool = True
-
-
-class MeetingAction(Model):
-    """One step in the meeting protocol (see meetings.py), taken by the acting member."""
-    operation: Literal["request", "respond", "message", "close"]
-    invitees: list[str] = Field(default_factory=list, max_length=17)
-    topic: str = Field(default="", max_length=300)
-    meeting_id: str | None = None
-    accepted: bool | None = None
-    text: str = Field(default="", max_length=4000)
 
 
 class RoundSummary(Model):
@@ -296,9 +279,6 @@ class MemberAction(Model):
     finish_reason: str | None = Field(default=None, min_length=1, max_length=1000)
     round_summary: RoundSummary | None = None
     action_plan: list[RoundAssignment] = Field(default_factory=list, max_length=24)
-    meeting_requests: list[MeetingInvitation] = Field(default_factory=list, max_length=1)
-    meeting_acknowledgements: dict[str, Literal["accept", "decline"]] = Field(default_factory=dict)
-    meeting_messages: list[MeetingMessage] = Field(default_factory=list, max_length=2)
-    meeting_reports: list[MeetingReport] = Field(default_factory=list, max_length=2)
-    close_meetings: list[str] = Field(default_factory=list, max_length=1)
-    meeting_actions: list[MeetingAction] = Field(default_factory=list, max_length=4)
+    partner_requests: list[PartnerRequest] = Field(default_factory=list, max_length=3)
+    end_conversation: bool = False
+    meeting_report: MeetingReport | None = None

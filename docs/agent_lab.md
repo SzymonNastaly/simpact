@@ -88,16 +88,20 @@ existing researcher/member scopes. Public and foreign viewers cannot access
 private delegation discussions, summaries, assignments or individual traces.
 The server binds to loopback and is a local researcher's viewer.
 
-## Backend meetings
+## Bilaterals
 
-The simulation's member meeting protocol remains available independently of the
-frontend. `--meeting-ticks` controls the normal phase before later rounds;
-`--meeting-ticks 0` or `--no-member-meetings` disables autonomous meetings.
-Additional group-floor scenes and participant-authored team reports are opt-in
-through `--member-floor-ticks`. Both paths share one clock and meeting registry.
-Requests require every invitee's acknowledgement within five simulation ticks.
-Private messages remain scoped to the exact participants; outcome reports can
-notify the reporting participant's delegation without copying the transcript.
+Before each later round's team discussion, members talk privately one to one
+(`climate_sim/bilaterals.py`). Each slot: every member and observer names up to
+three people it wants to meet (`nominate`); the game master pairs requests across
+delegations first, then mutual requests, then by rank, so nobody has two meetings
+at once and no pair meets twice in a round. Each pair takes turns, opener first
+(`bilateral`), until one side sets `end_conversation` or the message limit is
+reached; a partner who did not ask for the meeting can decline on its first turn.
+Each participant then reports to its own team (`debrief`, a `team_meeting_report`
+event). Only the two participants see a conversation; reports are claims, not
+commitments. `--bilateral-slots` (default 2, 0 disables) and `--bilateral-messages`
+(default 8) configure them. This replaces the earlier tick-based `meet` and
+`member_floor` protocols and the viewer's manual meeting sandbox.
 
 ## Eight delegations and observers
 
@@ -111,7 +115,7 @@ share and weights Brazil's forest pledges more heavily.
 
 `--observers [GROUP ...]` adds one representative per World Climate supporting role
 (all three when no group is named): `climate_activists`, `fossil_fuel_lobby` and
-`journalists`. They take part in member meetings under the same protocol, and after
+`journalists`. They take part in bilaterals like delegates, and after
 each round's commitments every observer gives a public `observer_statement` that all
 delegates see. They never prepare, deliberate, pledge, make or answer offers, or vote.
 The replay lists them under `observers`; the Round 1 viewer shows countries only.
