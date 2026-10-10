@@ -312,7 +312,11 @@ class OfflineBackend:
         stage, round_number = context["stage"], context["round"]
         role, brief = member.priority_role, member.brief
         if stage == "nominate":
-            return MemberAction(partner_requests=self._partner_requests(member, context))
+            requests = self._partner_requests(member, context)
+            if context.get('allocator_mode'):
+                available = {p['id'] for p in context['directory'] if p.get('availability') == 'free'}
+                requests.sort(key=lambda r: r.member not in available)
+            return MemberAction(partner_requests=requests)
         if stage == "bilateral":
             return self._bilateral_turn(member, context["bilateral"])
         if stage == "debrief":
@@ -613,6 +617,16 @@ class GeminiBackend:
                 "team_members ID, including yourself, using their roles, concerns and unresolved issues. "
                 "Each target_round must equal the current round plus one. Say who should do what and produce what. "
                 "All unrelated fields must be null or empty, and finish_discussion must be false."
+            )
+        if context.get('allocator_mode'):
+            system += (
+                " This is a continuous meeting allocator, with no slots. Check the current availability directory "
+                "and your Round 1 action plan and team reports. Rank up to three next partners with concrete topics "
+                "and what you need to learn or update. Prefer free agents. You can meet at most five distinct people, "
+                "one at a time. If previous_requests are present, they waited ten seconds without allocation: "
+                "adjust priorities toward available alternatives. During debrief, give your team a factual update "
+                "and concrete next_steps naming who should be updated or consulted next. Return no partner_requests when your work is done "
+                "or nobody eligible remains. Never claim an allocation or agreement before it exists. "
             )
         packet = {"name": member.name, "role": member.role.value, "personality": member.personality,
                   "brief": member.brief.model_dump(mode="json"), "own_preference": member.preferred.model_dump(mode="json") if member.preferred else None,

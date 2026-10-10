@@ -29,9 +29,13 @@ with its conversations and closing progress, initially paused.
 Once every delegation has concluded Round 1, **Bilaterals** opens below the
 country cards: every agent names who it wants to talk to, pairs across countries
 are matched first, each pair talks privately one to one, and both sides report
-back to their own team. Each Start runs one slot (`--bilateral-slots 2`,
-`--bilateral-messages 8`); `--observers` lets the activists, the lobby and
-journalists take part.
+back to their own team. Live Round 2 uses available and occupied agent queues,
+with ranked partner requests and independently progressing conversations. An agent
+meets at most five distinct people and replans after ten seconds waiting. After
+each meeting it updates its team and chooses its next priorities. Start runs this
+continuously; Pause lets in-flight calls finish. `--bilateral-messages 8` limits
+conversation length; `--observers` includes activists, the lobby and journalists.
+Saved slot-based meetings remain readable and count toward the five-person limit.
 
 Saved simulations can also be viewed:
 

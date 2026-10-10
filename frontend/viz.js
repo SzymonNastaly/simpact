@@ -131,10 +131,11 @@ window.SimpactViz = (() => {
   // Bilaterals: every agent around a ring, grouped by delegation; each conversation is a link.
   function network(el, data, names, {slot = 'all', selected = null, onSelect, onSlot} = {}) {
     const meetings = (data.rounds || []).flatMap(round => round.slots.flatMap(s => s.meetings.map(m => ({...m, roundNumber: round.round}))));
+    const continuous = data.live?.allocator;
     const slots = [...new Set(meetings.map(m => m.slot))].sort();
     if (!meetings.length) { el.hidden = true; return; }
     el.hidden = false;
-    const shown = meetings.filter(m => slot === 'all' || m.slot === slot);
+    const shown = meetings.filter(m => continuous || slot === 'all' || m.slot === slot);
     const people = data.participants;
     const groups = [...new Set(people.map(p => p.delegation))];
     const width = Math.max(320, el.clientWidth || 900), height = Math.min(width, 620);
@@ -169,13 +170,13 @@ window.SimpactViz = (() => {
       const kind = declined(m) ? 'declined' : m.mutual ? 'mutual' : 'one-sided';
       const state = selected ? (m.id === selected ? ' selected' : ' faded') : '';
       edges += `<path d="${d}" class="viz-edge ${kind}${state}" stroke-width="${m.id === selected ? widthPx + 1.5 : widthPx}"/>`;
-      const tipText = `<strong>${esc(names.fullName(m.initiator))} ↔ ${esc(names.fullName(m.partner))}</strong><br>${esc(m.topic)}<br><span>Slot ${m.slot} · ${m.messages.length} messages · ${kind === 'mutual' ? 'both asked' : kind === 'declined' ? 'declined' : 'one side asked'}</span>`;
+      const tipText = `<strong>${esc(names.fullName(m.initiator))} ↔ ${esc(names.fullName(m.partner))}</strong><br>${esc(m.topic)}<br><span>${continuous ? 'Round 2' : `Slot ${m.slot}`} · ${m.messages.length} messages · ${kind === 'mutual' ? 'both asked' : kind === 'declined' ? 'declined' : 'one side asked'}</span>`;
       hits += `<path d="${d}" class="viz-edge-hit" data-meeting="${esc(m.id)}" data-tip="${esc(tipText)}" tabindex="0" role="button" aria-label="${esc(`${names.fullName(m.initiator)} and ${names.fullName(m.partner)}: ${m.topic}`)}"/>`;
     }
     let nodes = '';
     for (const {x, y, p} of Object.values(position)) {
       const role = roleKey(p.role), count = busy[p.agent] || 0;
-      const tipText = `<strong>${esc(names.fullName(p.agent))}</strong><br><span>${count} ${count === 1 ? 'conversation' : 'conversations'}${slot === 'all' ? '' : ` in slot ${slot}`}</span>`;
+      const tipText = `<strong>${esc(names.fullName(p.agent))}</strong><br><span>${count} ${count === 1 ? 'conversation' : 'conversations'}${continuous || slot === 'all' ? '' : ` in slot ${slot}`} </span>`;
       const mark = role === 'observer'
         ? `<rect x="${x - 6}" y="${y - 6}" width="12" height="12" transform="rotate(45 ${x} ${y})" fill="var(--viz-muted)" stroke="var(--viz-surface)" stroke-width="2"/>`
         : `<circle cx="${x}" cy="${y}" r="7" fill="${ROLE_COLORS[role]}" stroke="var(--viz-surface)" stroke-width="2"${count ? '' : ' opacity=".35"'}/>`;
@@ -186,7 +187,7 @@ window.SimpactViz = (() => {
       const anchor = Math.abs(Math.cos(angle)) < .25 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end';
       return `<text x="${x}" y="${y + 4}" class="viz-label" text-anchor="${anchor}">${esc(text)}</text>`;
     }).join('');
-    const pills = slots.length > 1 ? `<div class="viz-pills" role="group" aria-label="Show slot">${['all', ...slots].map(s => `<button type="button" data-slot="${s}" aria-pressed="${s === slot}">${s === 'all' ? 'All slots' : `Slot ${s}`}</button>`).join('')}</div>` : '';
+    const pills = !continuous && slots.length > 1 ? `<div class="viz-pills" role="group" aria-label="Show slot">${['all', ...slots].map(s => `<button type="button" data-slot="${s}" aria-pressed="${s === slot}">${s === 'all' ? 'All slots' : `Slot ${s}`}</button>`).join('')}</div>` : '';
     const mutual = shown.filter(m => m.mutual).length, cross = shown.filter(m => people.find(p => p.agent === m.initiator)?.delegation !== people.find(p => p.agent === m.partner)?.delegation).length;
     el.innerHTML = `<div class="viz-heading"><h2>Who talked to whom</h2><p>${shown.length} conversations · ${cross} across delegations · ${mutual} both asked for. Thicker links had more messages; select one to read it.</p></div>
       ${pills}<div class="viz-legend">${ROLE_ORDER.map(role => `<span><i style="background:${ROLE_COLORS[role]}"></i>${ROLE_LABELS[role]}</span>`).join('')}<span><i class="diamond"></i>Observer</span><span><b class="line mutual"></b>Both asked</span><span><b class="line one-sided"></b>One side asked</span><span><b class="line declined"></b>Declined</span></div>

@@ -207,7 +207,7 @@
     if ($('bilaterals-entry').hidden) return;
     $('bilaterals-entry-status').textContent = live && !live.open
       ? `Opens once every delegation has concluded Round 1 · ${live.concluded} of ${live.countries} concluded`
-      : `${meetings} ${meetings === 1 ? 'conversation' : 'conversations'}${live ? ` · ${live.done ? 'all slots complete' : `slot ${live.slot} of ${live.slots}`}` : ''}`;
+      : `${meetings} ${meetings === 1 ? 'conversation' : 'conversations'}${live ? ` · ${live.done ? 'plans completed' : 'live agent queue'}` : ''}`;
   }
 
   function openBilaterals() {
@@ -247,15 +247,13 @@
 
   function renderBilaterals() {
     renderBilateralControls();
-    const rounds = bilaterals?.rounds || [];
-    if (!meetingsOf().some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetingsOf()[0]?.id || null;
-    $('bilateral-slots').innerHTML = rounds.length ? rounds.map(round => round.slots.map(slot => {
-      const requests = Object.entries(slot.nominations);
-      return `<section class="bilateral-slot"><h2>${rounds.length > 1 ? `Before Round ${esc(round.round)} · ` : ''}Slot ${esc(slot.slot)}</h2><p class="slot-meta">${slot.paired ? `${slot.meetings.length} ${slot.meetings.length === 1 ? 'conversation' : 'conversations'}${slot.unmatched.length ? ` · ${slot.unmatched.length} without a partner` : ''}` : `${requests.length} of ${bilaterals.participants.length} agents have chosen partners`}</p>
-        ${slot.meetings.map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span>${meeting.mutual ? '<span class="chip">Both asked</span>' : ''}<span>${meeting.messages.length} ${meeting.messages.length === 1 ? 'message' : 'messages'}</span></span></button>`).join('')}
-        ${slot.summary ? `<article class="slot-summary"><p class="eyebrow">WHAT HAPPENED IN SLOT ${esc(slot.slot)}</p>${thoughtText(slot.summary.text)}<p class="slot-summary-source">Neutral rapporteur · researcher only · agents never see this</p>${thinkingFor(`slot-${round.round}-${slot.slot}`,slot.summary)}</article>` : slot.paired && slot.meetings.length && slot.meetings.every(meeting => meeting.status === 'closed') ? '<p class="slot-meta">The rapporteur is summarizing this slot…</p>' : ''}
-        ${requests.length ? `<details class="requests"><summary>Who asked for whom</summary><ul>${requests.map(([id,item]) => `<li><button type="button" class="speaker" data-agent="${esc(id)}"${item.trace_id ? ` data-trace="${esc(item.trace_id)}"` : ''}>${esc(fullName(id))}</button> → ${item.requests.length ? item.requests.map(request => `${esc(fullName(request.member))} <span class="request-topic">(${esc(request.topic)})</span>`).join(', ') : '<span class="request-topic">nobody</span>'}</li>`).join('')}</ul></details>` : ''}</section>`;
-    }).join('')).join('') : empty(bilaterals?.live?.open ? 'Start the bilaterals. Agents first choose who they want to talk to.' : 'Bilaterals start after every delegation has concluded Round 1.');
+    const meetings = meetingsOf();
+    if (!meetings.some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetings.find(m => m.status === 'active')?.id || meetings[0]?.id || null;
+    const queue = bilaterals?.queue || [];
+    const agentRow = item => `<article class="queue-agent">${person(item.agent)}<span class="chip">${esc(item.state)} · ${item.partners_met}/5 people</span>${item.waiting_seconds ? `<small>Waiting ${esc(item.waiting_seconds)}s / 10s</small>` : ''}${item.priorities?.length ? `<ol>${item.priorities.map(request => `<li>${esc(fullName(request.member))}<small>${esc(request.topic)}</small></li>`).join('')}</ol>` : ''}</article>`;
+    $('bilateral-slots').innerHTML = `<div class="agent-queues"><section><h2>Available agents</h2>${queue.filter(item => ['free','planning'].includes(item.state)).map(agentRow).join('') || empty('No agents waiting.')}</section><section><h2>Occupied agents</h2>${queue.filter(item => ['busy','updating'].includes(item.state)).map(agentRow).join('') || empty('No conversations in progress.')}</section></div>
+      ${queue.some(item => item.state === 'finished') ? `<details><summary>Finished agents</summary>${queue.filter(item => item.state === 'finished').map(agentRow).join('')}</details>` : ''}
+      <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`;
     renderMeeting();
     renderNetwork();
     chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));
@@ -266,11 +264,11 @@
     $('bilateral-controls').hidden = !live;
     if (!live) return;
     const thinking = live.thinking_agents.length;
-    const statuses = {idle:'Ready to begin',queued:'Waiting for the next step',paused:'Bilaterals paused',slot_done:`Slot ${live.slot - 1} complete · read the conversations, then start slot ${live.slot}`,completed:'All bilateral slots are complete',error:live.error};
+    const statuses = {idle:'Ready to begin',queued:'Waiting for the next step',paused:'Bilaterals paused',completed:'All agents have finished their conversation plans',error:live.error};
     $('bilateral-status').textContent = !live.open ? `Opens once every delegation has concluded Round 1 · ${live.concluded} of ${live.countries} concluded`
       : live.status === 'thinking' ? `${thinking} ${thinking === 1 ? 'agent is' : 'agents are'} thinking…` : live.status === 'pausing' ? 'Pausing after the current step…' : statuses[live.status] || live.status;
-    $('bilateral-detail').textContent = `${live.slots} ${live.slots === 1 ? 'slot' : 'slots'} · up to ${live.message_limit} messages per conversation · each start runs one slot`;
-    $('bilateral-control').textContent = live.done ? 'Bilaterals complete' : live.active ? 'Pause bilaterals' : live.status === 'idle' ? 'Start bilaterals' : `Continue slot ${live.slot}`;
+    $('bilateral-detail').textContent = `Up to 5 people per agent · replan after 10s waiting · up to ${live.message_limit} messages per conversation`;
+    $('bilateral-control').textContent = live.done ? 'Bilaterals complete' : live.active ? 'Pause bilaterals' : live.status === 'idle' ? 'Start Round 2' : 'Continue conversations';
     $('bilateral-control').disabled = controlPending || !live.open || live.done || live.status === 'pausing';
   }
 
@@ -284,7 +282,7 @@
     const side = id => id === meeting.initiator ? 'left' : 'right';
     const asked = meeting.mutual ? 'Both asked for this meeting.' : `${fullName(meeting.initiator)} asked for this meeting.`;
     const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : `${fullName(meeting.closed_by)} ended the conversation.`;
-    $('bilateral-conversation').innerHTML = `<p class="eyebrow">SLOT ${esc(meeting.slot)} · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
+    $('bilateral-conversation').innerHTML = `<p class="eyebrow">ROUND 2 · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
       <div class="meeting-agents">${[meeting.initiator,meeting.partner].map(id => { const agent = agentById(id); return `<button type="button" class="agent-button" data-agent="${esc(id)}">${agent ? avatar(agent) : ''}<span><strong>${esc(fullName(id))}</strong><small>All thinking traces</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`; }).join('')}</div>
       <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><p class="message-text">${esc(message.text)}</p>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
       ${ended ? `<p class="conversation-note">${esc(ended)}</p>` : ''}

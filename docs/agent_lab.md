@@ -90,18 +90,19 @@ The server binds to loopback and is a local researcher's viewer.
 
 ## Bilaterals
 
-Before each later round's team discussion, members talk privately one to one
-(`climate_sim/bilaterals.py`). Each slot: every member and observer names up to
-three people it wants to meet (`nominate`); the game master pairs requests across
-delegations first, then mutual requests, then by rank, so nobody has two meetings
-at once and no pair meets twice in a round. Each pair takes turns, opener first
-(`bilateral`), until one side sets `end_conversation` or the message limit is
-reached; a partner who did not ask for the meeting can decline on its first turn.
-Each participant then reports to its own team (`debrief`, a `team_meeting_report`
-event). Only the two participants see a conversation; reports are claims, not
-commitments. `--bilateral-slots` (default 2, 0 disables) and `--bilateral-messages`
-(default 8) configure them. This replaces the earlier tick-based `meet` and
-`member_floor` protocols and the viewer's manual meeting sandbox.
+Live Round 2 uses `climate_sim/allocator.py`: agents independently rank up to
+three next partners, the allocator reserves available pairs, and each private
+conversation progresses without waiting for others. Matching prefers cross-country
+and mutual requests, then ranked priority. Each agent may meet at most five distinct
+people and only joins one conversation at a time. A request waiting ten seconds
+triggers a fresh planning call with current availability and previous requests.
+After reporting to its own team, the agent replans using its assigned tasks and
+updated reports. An empty plan opts out; completion also occurs when no eligible
+unmet partners remain. Pause finishes in-flight calls; Continue resets waiting
+clocks. Researcher views show queues and priorities; agents see availability and
+their own requests, never another agent's private plan. Saved conversations and
+reports restore from events and count toward the limit. The offline batch runner
+retains its configurable slot schedule in `climate_sim/bilaterals.py`.
 
 After every slot a neutral Gemini rapporteur summarizes it, and after the last slot three
 independent Gemini analysts each rate how cooperative every pair of delegations that talked
