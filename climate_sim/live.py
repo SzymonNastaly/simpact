@@ -32,6 +32,7 @@ class LiveLab(Lab):
                               thinking_level=thinking_level, include_thoughts=True, max_output_tokens=8192))
         self.sim = Simulation(config, output=output, backend_factory=backend_factory)
         self.events, self.briefs, self.hub = self.sim.store.events, self.sim.briefs, self.sim.hub
+        self.observer_briefs = self.sim.observer_briefs
         self.output, self.human_role = output, None
         self.run_name = output.name if output else "live-round-one"
         self.lock = threading.RLock()

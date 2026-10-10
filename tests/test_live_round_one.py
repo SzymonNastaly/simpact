@@ -126,6 +126,8 @@ def test_real_sdk_thinking_configuration_usage_and_thought_summary_are_recorded(
     requests = []
     lab = LiveLab(SimulationConfig(seed=42))
     member = lab.sim.agents["india.head_negotiator"]
+    from climate_sim import agents
+    monkeypatch.setitem(agents._UPLOADED_PDFS, member.brief.source_sha256, "https://example.invalid/files/india")
     backend = GeminiBackend("test-model", thinking_level="medium", include_thoughts=True, max_output_tokens=8192)
     backend.client.close()
 

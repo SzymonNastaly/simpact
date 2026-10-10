@@ -25,6 +25,7 @@ renews that limit and retains prior messages, preferences, and the next speaker.
 `--thinking-level low|medium|high`, `--model`, `--team-size`, and `--seed` configure
 a new live session. `--backend offline` exercises the same loop using explicitly
 scripted policies. Only Round 1 runs in live mode.
+`--world eight` also enables Brazil and Saudi Arabia in the live country board.
 
 Live events, traces, failures and an atomic state checkpoint are saved under
 `runs/round-one-live-*/` with private file permissions. These can later be opened
@@ -62,6 +63,7 @@ and `--agent-models` override it. Scripted runs are labelled in the viewer.
   and outputs, and provider thought summaries when returned. Thought summaries
   are distinct from the agent's decision summary. Missing summaries and missing
   usage remain explicit; thought signatures are never displayed or saved.
+  PDF attachment records identify the exact briefing by file name, hash and Files API URI.
 - Failed calls pause that country, create a private failure record, and produce
   no discussion message. Continue retries from the same speaker.
 - Older runs without `agent_trace` events show their preparation notes and
@@ -83,6 +85,31 @@ through `--member-floor-ticks`. Both paths share one clock and meeting registry.
 Requests require every invitee's acknowledgement within five simulation ticks.
 Private messages remain scoped to the exact participants; outcome reports can
 notify the reporting participant's delegation without copying the transcript.
+
+## Eight delegations and observers
+
+`--world eight` splits Brazil and Saudi Arabia out of Other Developing Nations, so
+eight teams negotiate; `six` (the default) is World Climate's own game and the only one
+C-ROADS reviewed outcomes can match. There is no World Climate briefing for either
+country: their members read the Other Developing Nations PDF, which covers their
+regions, plus author-written country goals and experimental parameters in
+`data/climate/briefs/`. The mock evaluator carves their emissions out of that bloc's
+share and weights Brazil's forest pledges more heavily.
+
+`--observers [GROUP ...]` adds one representative per World Climate supporting role
+(all three when no group is named): `climate_activists`, `fossil_fuel_lobby` and
+`journalists`. They take part in member meetings under the same protocol, and after
+each round's commitments every observer gives a public `observer_statement` that all
+delegates see. They never prepare, deliberate, pledge, make or answer offers, or vote.
+The replay lists them under `observers`; the Round 1 viewer shows countries only.
+
+## Briefing PDFs
+
+Gemini members get their own briefing PDF in every call, uploaded once per run through
+the Gemini Files API after its hash is checked against the brief. The brief JSON keeps
+what the PDFs do not contain: the experimental baseline, ceilings and finance role
+that the validator and mock evaluator use. `scripts/build_climate_briefs.py` rebuilds
+the JSON from `data/climate/brief_specs.json` and `observer_specs.json`.
 
 ## Verify
 

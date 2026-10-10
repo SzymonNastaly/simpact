@@ -15,12 +15,30 @@ class DelegationId(StrEnum):
     INDIA = "india"
     OTHER_DEVELOPED = "other_developed"
     OTHER_DEVELOPING = "other_developing"
+    BRAZIL = "brazil"
+    SAUDI_ARABIA = "saudi_arabia"
+
+
+# "six" is World Climate's six-region game, the one C-ROADS evaluates. "eight" splits Brazil and
+# Saudi Arabia out of Other Developing Nations, whose own briefing covers both of their regions.
+WORLDS: dict[str, tuple[DelegationId, ...]] = {
+    "six": tuple(DelegationId)[:6],
+    "eight": tuple(DelegationId),
+}
+
+
+class ObserverId(StrEnum):
+    """World Climate's supporting roles: at the summit, but they cannot pledge, offer or vote."""
+    CLIMATE_ACTIVISTS = "climate_activists"
+    FOSSIL_FUEL_LOBBY = "fossil_fuel_lobby"
+    JOURNALISTS = "journalists"
 
 
 class Role(StrEnum):
     HEAD = "head_negotiator"
     ECONOMIC = "economic_minister"
     CLIMATE = "climate_adviser"
+    OBSERVER = "observer"
 
 
 class Model(BaseModel):
@@ -69,7 +87,7 @@ def parse_condition(key: str) -> tuple[DelegationId, str, str]:
 class NegotiationOffer(Model):
     id: str = Field(min_length=1, max_length=120)
     sender: DelegationId
-    recipients: list[DelegationId] = Field(min_length=1, max_length=5)
+    recipients: list[DelegationId] = Field(min_length=1, max_length=len(DelegationId) - 1)
     public: bool = False
     offered_changes: dict[str, float | int] = Field(min_length=1)
     conditions: dict[str, float] = Field(default_factory=dict)
@@ -142,19 +160,14 @@ class ClimateOutcome(Model):
         return self
 
 
-class SourcePage(Model):
-    page: int = Field(ge=1)
-    text: str
-
-
 class Brief(Model):
+    """Curated summary and experimental parameters. Gemini members read the source PDF itself."""
     delegation: DelegationId
     title: str
     variant: str = "national"
-    source_file: str
+    source_file: str  # relative to data/climate
     source_sha256: str
     source_url: str
-    source_pages: list[SourcePage]
     attribution: str
     license: str
     goals: list[str]
@@ -180,6 +193,21 @@ class Brief(Model):
             raise ValueError("Commitment exceeds the experimental transition-rate ceiling")
 
 
+class ObserverBrief(Model):
+    # Named like Brief.delegation: the group is its members' private "delegation" scope.
+    delegation: ObserverId
+    title: str
+    source_file: str
+    source_sha256: str
+    source_url: str
+    attribution: str
+    license: str
+    goals: list[str]
+    tactics: list[str]
+    persona: str
+    adaptation_notes: str
+
+
 class SimulationConfig(Model):
     seed: int = Field(ge=0)
     team_size: int = Field(default=3, ge=3, le=12)
@@ -196,6 +224,8 @@ class SimulationConfig(Model):
     default_model: str = "gemini-3.8-flash"
     agent_models: dict[str, str] = Field(default_factory=dict)
     us_variant: Literal["national", "climate_alliance_proxy"] = "national"
+    world: Literal["six", "eight"] = "six"
+    observers: list[ObserverId] = Field(default_factory=list)
     stop_on_target: bool = False
     member_meetings: bool = True
     # Additional group-floor scenes are opt-in; the default scheduler uses meeting_ticks.

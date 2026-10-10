@@ -3,8 +3,8 @@
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const roles = {head_negotiator:'Head negotiator',economic_minister:'Economic minister',climate_adviser:'Climate adviser'};
-  const codes = {usa:'US',eu:'EU',china:'CN',india:'IN',other_developed:'OD',other_developing:'OG'};
-  const colors = {usa:'#e9ede3',eu:'#e1e8ee',china:'#efe2da',india:'#f3e8d4',other_developed:'#e9e6ef',other_developing:'#e2ece4'};
+  const codes = {usa:'US',eu:'EU',china:'CN',india:'IN',other_developed:'OD',other_developing:'OG',brazil:'BR',saudi_arabia:'SA'};
+  const colors = {usa:'#e9ede3',eu:'#e1e8ee',china:'#efe2da',india:'#f3e8d4',other_developed:'#e9e6ef',other_developing:'#e2ece4',brazil:'#e5edda',saudi_arabia:'#ece6d6'};
   const stages = {prepare:'Preparation',internal:'Team discussion',mandate:'Mandate proposal',vote:'Team vote',announce:'Opening announcement'};
   let session = null;
   let selectedCountry = null;
@@ -135,7 +135,7 @@
   function generation(record) {
     if (!record) return '';
     const calls = record.calls || [];
-    return `<div class="call-record"><p class="intention">${esc(record.model)} · Thinking level: ${esc(record.thinking_level || 'Model default')} · ${calls.length} ${calls.length === 1 ? 'attempt' : 'attempts'}</p>${calls.map(call => {
+    return `<div class="call-record"><p class="intention">${esc(record.model)} · Thinking level: ${esc(record.thinking_level || 'Model default')} · ${calls.length} ${calls.length === 1 ? 'attempt' : 'attempts'}</p>${(record.attachments || []).map(file => `<details><summary>Briefing PDF · ${esc(file.source_file)}</summary><pre>${esc(file.mime_type)}\nSHA-256: ${esc(file.sha256)}\n${esc(file.file_uri)}</pre></details>`).join('')}${calls.map(call => {
       const u = call.usage || {};
       const stats = [['Input',u.prompt_token_count],['Output',u.candidates_token_count],['Thinking',u.thoughts_token_count],['Total',u.total_token_count]].filter(([,v]) => v != null);
       return `<details><summary>Call ${call.attempt} · ${call.accepted ? 'Accepted' : call.error_type ? 'Failed' : 'Validation repair'}${call.latency_ms != null ? ` · ${(call.latency_ms / 1000).toFixed(1)}s` : ''}</summary><div class="evidence"><p>${stats.length ? stats.map(([label,n]) => `${label}: ${n} tokens`).join(' · ') : 'Token usage was not returned.'}</p>${call.thought_summaries?.length ? `<p class="evidence-label">Provider thought summary</p>${call.thought_summaries.map(text => `<p>${esc(text)}</p>`).join('')}` : '<p>No provider thought summary was returned for this call.</p>'}${call.error_type ? `<p>${esc(call.error_type)}${call.http_status ? ` · HTTP ${esc(call.http_status)}` : ''}</p>` : ''}${call.validation_error ? `<p>${esc(call.validation_error)}</p>` : ''}<details><summary>Exact model input</summary><pre>${esc(record.system_instruction)}\n\n${esc(call.input)}</pre></details><details><summary>Model output</summary><pre>${esc(call.output || 'No output was returned.')}</pre></details></div></details>`;

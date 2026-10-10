@@ -1,0 +1,44 @@
+{
+  "delegation": "saudi_arabia",
+  "title": "Saudi Arabia",
+  "variant": "national",
+  "source_file": "materials/6R-WCS-Briefing-Statement-Other-Developing-Nations-v12.pdf",
+  "source_sha256": "66589bf4f86a006f86a872a91dfb77d11439e6cd4d14b0dfcaf5a6272c493a43",
+  "source_url": "https://www.climateinteractive.org/world-climate-simulation-resources/",
+  "attribution": "World Climate Simulation materials by Climate Interactive, MIT Sloan, and the UMass Lowell Climate Change Initiative. Updated November 2025. Adapted for nested-agent experiments.",
+  "license": "CC BY 4.0",
+  "goals": [
+    "Protect oil export revenues and the role of hydrocarbons in the global economy",
+    "Diversify the economy under Vision 2030",
+    "Advance the Saudi Green Initiative's afforestation goals and a 2060 net-zero target"
+  ],
+  "negotiating_constraints": [
+    "Resist language that phases out fossil fuels; favour emissions-focused approaches such as carbon capture",
+    "Developed nations bear historic responsibility, so there is no obligation to contribute climate finance",
+    "The economic impact of climate policy on fossil fuel exporters must be addressed"
+  ],
+  "opportunities": [
+    "Very large solar and wind potential",
+    "Low-carbon hydrogen exports",
+    "Carbon capture and the circular carbon economy"
+  ],
+  "climate_risks": [
+    "Extreme heat beyond human tolerance",
+    "Water scarcity and desertification"
+  ],
+  "finance_position": "flexible",
+  "experimental_baseline": {
+    "delegation": "saudi_arabia",
+    "emissions_peak_year": 2035,
+    "reduction_start_year": 2040,
+    "annual_reduction_rate_percent": 1.0,
+    "deforestation_prevention_percent": 0,
+    "afforestation_percent": 10,
+    "climate_fund_billion_per_year": 0
+  },
+  "experimental_limits": {
+    "reduction_rate_maximum": 5.0,
+    "finance_absolute_maximum": 100
+  },
+  "adaptation_notes": "No World Climate briefing exists for Saudi Arabia. Its members read the Other Developing Nations briefing, which covers most of the Middle East. The goals, constraints, opportunities and risks below are author-written summaries of public positions up to November 2025. Goals and qualitative constraints paraphrase the briefing. Baseline commitments, numeric ceilings, finance-role restrictions, personalities and scoring are author-created experimental assumptions, NOT official prescribed positions. Source text reflects November 2025 and is not a live policy fact-check."
+}

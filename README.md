@@ -33,6 +33,15 @@ Open `http://127.0.0.1:8766/`. Without `--live`, the viewer reads a saved sessio
 with `gemini-3.8-flash`. Offline runs label their summaries as scripted policies.
 Private archives stay local.
 
+`--world eight` adds Brazil and Saudi Arabia to World Climate's six regions, and
+`--observers` brings in the climate activists, the fossil fuel lobby and journalists.
+Observers meet delegates and give one public statement per round, but cannot pledge,
+offer or vote. Gemini agents read their own briefing PDF directly.
+
+```bash
+uv run python -m climate_sim --backend gemini --world eight --observers --rounds 3 --output runs/eight-gemini
+```
+
 See [the viewer guide](docs/agent_lab.md) for setup and the available agent records.
 
 ## Original Model UN simulator

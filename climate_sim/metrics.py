@@ -120,7 +120,15 @@ def calculate_metrics(sim: Simulation) -> dict:
                    "meetings": {"requested": len(meetings), "status_counts": dict(Counter(m.status for m in meetings)),
                                 "messages": sum(len(m.messages) for m in meetings),
                                 "cross_delegation": sum(len({delegation_of[p] for p in m.participants}) > 1 for m in meetings),
-                                "non_spokesperson_senders": sum(sim.agents[m.sender].role != Role.HEAD for m in meetings)},
+                                "non_spokesperson_senders": sum(sim.agents[m.sender].role != Role.HEAD for m in meetings),
+                                "with_observers": sum(any(sim.agents[p].role == Role.OBSERVER for p in m.participants) for m in meetings)},
+                   "observers": {member.name: {
+                       "statements": sum(e.kind == "observer_statement" and e.actor == member.name for e in sim.store.events),
+                       "meetings_requested": sum(m.sender == member.name for m in meetings),
+                       "meetings_held": sum(member.name in m.participants and m.status in ("active", "closed") and bool(m.messages) for m in meetings),
+                       "delegates_met": sorted({p for m in meetings if member.name in m.participants and m.messages
+                                                for p in m.participants if p != member.name})}
+                       for member in sim.observers},
                    "agreement_types": {"public": sum(o.public for o in fulfilled), "private": sum(not o.public for o in fulfilled),
                                        "conditional": sum(bool(o.conditions) for o in fulfilled), "coalition": sum(len(o.recipients) > 1 for o in fulfilled)}},
         "delegations": delegations, "internal_teams": teams}
@@ -137,7 +145,10 @@ def render_report(sim: Simulation, metrics: dict) -> str:
         f"Finance: {finance['contributions_billion_per_year']:.1f} billion/year contributed; {finance['requests_billion_per_year']:.1f} requested; gap {finance['funding_gap_billion_per_year']:.1f}.",
         f"Fulfilled agreements: {global_metrics['agreements_fulfilled']}; offer states: {global_metrics['offer_status_counts']}.",
         f"Member meetings: {global_metrics['meetings']['requested']} requested {global_metrics['meetings']['status_counts']}; "
-        f"{global_metrics['meetings']['messages']} messages; {global_metrics['meetings']['cross_delegation']} across delegations.", "",
+        f"{global_metrics['meetings']['messages']} messages; {global_metrics['meetings']['cross_delegation']} across delegations; "
+        f"{global_metrics['meetings']['with_observers']} with observers.",
+        *[f"Observer {sim.agents[name].brief.title}: {o['statements']} public statements; met {', '.join(o['delegates_met']) or 'nobody'}."
+          for name, o in global_metrics["observers"].items()], "",
         "| Delegation | Annual reduction: initial → final | Mandate drift | Disagreement: initial → final | Leader word share |", "|---|---:|---:|---:|---:|"]
     for region in sim.teams:
         team = metrics["internal_teams"][region]
