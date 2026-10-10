@@ -1,276 +1,196 @@
-"""Generic persona agents on AutoGen Core: 1:1 messages, orchestrator broadcasts, an agent index, memory and tools.
+"""Generic persona agents on Concordia: an entity with a persona, an index of the others, notes it keeps, and tools.
 
-AutoGen Core supplies the runtime, the message routing (topics + subscriptions) and the LLM clients.
-What is ours: the message dataclasses, the agent index, and the per-agent think/tool loop.
-Scenarios (e.g. model_un.py) subclass PersonaAgent to add their own tools, handlers and prompt context.
+Concordia supplies the entity/component system, the game master machinery, the engines and the Gemini wrapper.
+What is ours: a tool adapter, a notes component, an act component that lets the LLM call tools before it answers,
+and the PersonaAgent prefab that wires them together. Scenarios (e.g. model_un.py) add a game master that sets the
+rules: who acts when, what they may do, and what their actions cause.
 """
 
-import asyncio
 import dataclasses
-import json
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from autogen_core import (
-    AgentId,
-    DefaultInterventionHandler,
-    FunctionCall,
-    MessageContext,
-    RoutedAgent,
-    TopicId,
-    TypeSubscription,
-    message_handler,
-)
-from autogen_core.memory import ListMemory, MemoryContent, MemoryMimeType
-from autogen_core.model_context import BufferedChatCompletionContext
-from autogen_core.models import (
-    AssistantMessage,
-    ChatCompletionClient,
-    FunctionExecutionResult,
-    FunctionExecutionResultMessage,
-    SystemMessage,
-    UserMessage,
-)
-from autogen_core.tools import FunctionTool, Tool
+import numpy as np
+import tenacity
+from concordia.agents import entity_agent_with_logging
+from concordia.associative_memory import basic_associative_memory
+from concordia.components import agent as agent_components
+from concordia.document import interactive_document_tools, tool
+from concordia.language_model import language_model
+from concordia.typing import entity as entity_lib
+from concordia.typing import entity_component
+from concordia.typing import prefab as prefab_lib
 
-BROADCAST_TOPIC = "broadcast"
-TOPIC_SOURCE = "sim"  # TypeSubscription maps topic source -> agent key, so every agent lives at AgentId(<name>, "sim")
-
-
-def inbox_topic(agent_name: str) -> TopicId:
-    return TopicId(type=f"inbox.{agent_name}", source=TOPIC_SOURCE)
-
-
-def agent_id(name: str) -> AgentId:
-    return AgentId(name, TOPIC_SOURCE)
-
-
-# --- Messages on the bus -------------------------------------------------------------------------
-
-
-@dataclass
-class DirectMessage:
-    sender: str
-    recipient: str
-    content: str
-    hops: int = 0  # length of the agent-to-agent reply chain, used to stop endless ping-pong
-
-
-@dataclass
-class Broadcast:
-    content: str
-    sender: str = "orchestrator"
-
-
-# --- Agent index -------------------------------------------------------------------------------------
-
-
-@dataclass
-class AgentCard:
-    name: str  # agent type id: letters, digits, _ - . only
-    role: str
-    description: str  # public: every agent sees this in the index
-
-
-@dataclass
-class Directory:
-    """Index of every agent in the simulation. AutoGen Core has no public 'list agents' API, so we keep one."""
-
-    cards: dict[str, AgentCard] = field(default_factory=dict)
-
-    def add(self, card: AgentCard) -> None:
-        self.cards[card.name] = card
-
-    def render(self, exclude: str | None = None) -> str:
-        return "\n".join(
-            f"- {c.name} ({c.role}): {c.description}" for c in self.cards.values() if c.name != exclude
-        )
-
-
-async def register_persona(
-    runtime, agent_cls: type["PersonaAgent"], card: AgentCard, directory: Directory, topics: tuple[str, ...] = (), **kwargs
-) -> None:
-    """Register an agent, subscribe it to the broadcast topic, its own inbox and any extra topics, and index it."""
-
-    def factory() -> PersonaAgent:  # must take zero args
-        return agent_cls(card=card, directory=directory, **kwargs)
-
-    await agent_cls.register(runtime, card.name, factory)
-    for topic in (BROADCAST_TOPIC, f"inbox.{card.name}", *topics):
-        await runtime.add_subscription(TypeSubscription(topic_type=topic, agent_type=card.name))
-    directory.add(card)
-
-
-# --- The persona agent ----------------------------------------------------------------------------------
-
-
-class PersonaAgent(RoutedAgent):
-    def __init__(
-        self,
-        card: AgentCard,
-        persona: str,
-        model_client: ChatCompletionClient,
-        directory: Directory,
-        tools: list[Tool] = (),  # extra tools that do not need to know which agent calls them, e.g. web search
-        max_hops: int = 4,
-        max_tool_rounds: int = 6,
-        history_size: int = 30,
-    ) -> None:
-        super().__init__(card.description)
-        self._card = card
-        self._persona = persona
-        self._model = model_client
-        self._directory = directory
-        self._max_hops = max_hops
-        self._max_tool_rounds = max_tool_rounds
-        self._memory = ListMemory(name=f"{card.name}_notes")
-        self._history = BufferedChatCompletionContext(buffer_size=history_size)
-        # The runtime may run several handlers of one agent at once; process the inbox one message at a time.
-        self._lock = asyncio.Lock()
-        self._hops = 0
-        self._tools = {
-            t.name: t
-            for t in [
-                FunctionTool(self.send_message_to, name="send_message", description="Send a private message to another agent by name."),
-                FunctionTool(self.list_agents, name="list_agents", description="List every agent in the simulation."),
-                FunctionTool(self.remember, name="remember", description="Save a fact to your long-term notes."),
-                *tools,
-                *self.extra_tools(),
-            ]
-        }
-
-    @property
-    def card(self) -> AgentCard:
-        return self._card
-
-    # Extension points for scenario subclasses.
-
-    def extra_tools(self) -> list[Tool]:
-        return []
-
-    def extra_context(self) -> str:
-        """Appended to the system prompt on every LLM call."""
-        return ""
-
-    # Handlers: which one runs is chosen by the message's Python type.
-
-    @message_handler
-    async def on_direct(self, message: DirectMessage, ctx: MessageContext) -> None:
-        await self.think(f"Private message from {message.sender}: {message.content}", ctx, hops=message.hops)
-
-    @message_handler
-    async def on_broadcast(self, message: Broadcast, ctx: MessageContext) -> None:
-        await self.think(f"[BROADCAST from {message.sender}] {message.content}", ctx)
-
-    # Tools (bound methods, so they act as this agent).
-
-    async def send_message_to(self, to: str, message: str) -> str:
-        if to not in self._directory.cards:
-            return f"error: no agent named {to!r}. Known agents:\n{self._directory.render()}"
-        if to == self._card.name:
-            return "error: you cannot message yourself"
-        if self._hops >= self._max_hops:
-            return "error: conversation chain too long, wait for the next round"
-        log(f"  {self._card.name} -> {to}: {message}")
-        # Fire-and-forget publish to the recipient's inbox. runtime.send_message would be an RPC that blocks
-        # the sender until the recipient's whole handler (and any chain it triggers) has finished.
-        await self.publish_message(
-            DirectMessage(self._card.name, to, message, hops=self._hops + 1), inbox_topic(to)
-        )
-        return "delivered"
-
-    async def list_agents(self) -> str:
-        return self._directory.render()
-
-    async def remember(self, note: str) -> str:
-        await self._memory.add(MemoryContent(content=note, mime_type=MemoryMimeType.TEXT))
-        log(f"  {self._card.name} remembers: {note}")
-        return "saved"
-
-    # Checkpointing: runtime.save_state() / load_state() call these for every instantiated agent.
-
-    async def save_state(self) -> dict:
-        return {"history": await self._history.save_state(), "notes": [m.content for m in self._memory.content]}
-
-    async def load_state(self, state: dict) -> None:
-        await self._history.load_state(state["history"])
-        self._memory.content = [MemoryContent(content=n, mime_type=MemoryMimeType.TEXT) for n in state["notes"]]
-
-    # The think / tool-call loop.
-
-    def _system_prompt(self) -> str:
-        notes = "\n".join(f"- {m.content}" for m in self._memory.content) or "(none yet)"
-        return (
-            f"You are {self._card.name}, {self._card.role}.\n{self._persona}\n\n"
-            f"Other agents you can message:\n{self._directory.render(exclude=self._card.name)}\n\n"
-            f"Your notes:\n{notes}\n\n"
-            "Other agents only see what you send with your messaging tools; your plain-text reply is a private "
-            "thought that nobody else reads. Use remember for anything you need later. Be brief."
-            f"{self.extra_context()}"
-        )
-
-    async def think(self, text: str, ctx: MessageContext, hops: int = 0) -> None:
-        async with self._lock:
-            self._hops = hops
-            await self._history.add_message(UserMessage(content=text, source="inbox"))
-            for _ in range(self._max_tool_rounds):
-                history = await self._history.get_messages()
-                # The buffer cuts at a fixed size; start at a user turn or Gemini rejects the request (400).
-                while history and not isinstance(history[0], UserMessage):
-                    history = history[1:]
-                try:
-                    result = await self._model.create(
-                        [SystemMessage(content=self._system_prompt()), *history],
-                        tools=list(self._tools.values()),
-                        cancellation_token=ctx.cancellation_token,
-                    )
-                except Exception as e:  # one failed LLM call should not take the agent down for the whole run
-                    log(f"  {self._card.name} LLM error: {type(e).__name__}: {str(e)[:200]}")
-                    return
-                await self._history.add_message(AssistantMessage(content=result.content, source=self._card.name))
-                if isinstance(result.content, str):
-                    log(f"  {self._card.name} (thought): {result.content}")
-                    return
-                outputs = [await self._run_tool(call, ctx) for call in result.content]
-                await self._history.add_message(FunctionExecutionResultMessage(content=outputs))
-
-    async def _run_tool(self, call: FunctionCall, ctx: MessageContext) -> FunctionExecutionResult:
-        tool = self._tools.get(call.name)
-        try:
-            if tool is None:
-                raise ValueError(f"unknown tool {call.name}")
-            out = await tool.run_json(json.loads(call.arguments or "{}"), ctx.cancellation_token, call_id=call.id)
-            return FunctionExecutionResult(content=tool.return_value_as_string(out), name=call.name, call_id=call.id)
-        except Exception as e:  # report tool errors back to the model instead of crashing the agent
-            return FunctionExecutionResult(content=f"error: {e}", name=call.name, call_id=call.id, is_error=True)
-
-
-# --- Observability ------------------------------------------------------------------------------------------
-
-
-class TranscriptRecorder(DefaultInterventionHandler):
-    """Sees every message on the bus (the agents don't know) and appends one JSON line per message."""
-
-    def __init__(self, path: Path) -> None:
-        self._file = path.open("a")
-
-    def _write(self, kind: str, message: Any, sender: AgentId | None, to: str) -> None:
-        data = dataclasses.asdict(message) if dataclasses.is_dataclass(message) else repr(message)
-        event = {"t": datetime.now().isoformat(timespec="seconds"), "kind": kind, "type": type(message).__name__,
-                 "sender": str(sender) if sender else None, "to": to, "data": data}
-        self._file.write(json.dumps(event) + "\n")
-        self._file.flush()
-
-    async def on_publish(self, message: Any, *, message_context: MessageContext) -> Any:
-        self._write("publish", message, message_context.sender, str(message_context.topic_id))
-        return message
-
-    async def on_send(self, message: Any, *, message_context: MessageContext, recipient: AgentId) -> Any:
-        self._write("send", message, message_context.sender, str(recipient))
-        return message
+OBSERVATION_KEY = agent_components.observation.DEFAULT_OBSERVATION_COMPONENT_KEY
+MEMORY_KEY = agent_components.memory.DEFAULT_MEMORY_COMPONENT_KEY
 
 
 def log(line: str) -> None:
     print(line, flush=True)
+
+
+def no_embedding(text: str) -> np.ndarray:
+    """Sentence embedder for Concordia's memory banks. Nothing here retrieves memories by similarity, only by recency,
+    so a constant vector will do. Plug in a real embedder if you add a component such as AllSimilarMemories."""
+    return np.ones(3)
+
+
+class FunctionTool(tool.Tool):
+    """A Python function as a Concordia tool. The description is all the LLM sees, so it must name the arguments."""
+
+    def __init__(self, fn: Callable[..., str], name: str, description: str) -> None:
+        self._fn = fn
+        self._name = name
+        self._description = description
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return self._description
+
+    def execute(self, **kwargs: Any) -> str:
+        return str(self._fn(**kwargs))
+
+
+class Notes(agent_components.action_spec_ignored.ActionSpecIgnored):
+    """Long-term notes the entity writes with its `remember` tool. All of them go into every prompt."""
+
+    def __init__(self, pre_act_label: str = "Your notes") -> None:
+        super().__init__(pre_act_label)
+        self._notes: list[str] = []
+
+    def _make_pre_act_value(self) -> str:
+        return "\n".join(f"- {note}" for note in self._notes) or "(none yet)"
+
+    def remember(self, note: str) -> str:
+        self._notes.append(note)
+        return "saved"
+
+    def get_state(self) -> entity_component.ComponentState:
+        return {"notes": list(self._notes)}
+
+    def set_state(self, state: entity_component.ComponentState) -> None:
+        self._notes = list(state["notes"])
+
+
+class ToolUseAct(entity_component.ActingComponent, entity_component.ComponentWithLogging):
+    """Answers the game master's call to action. Before answering, the LLM may call tools (Concordia's
+    InteractiveDocumentWithTools runs that loop and records each call and result in the prompt).
+
+    The action comes back on one line, "<name>: <answer>": the simultaneous engine joins a round's actions with
+    newlines, and one line per entity lets the game master split them again.
+    """
+
+    def __init__(
+        self,
+        model: language_model.LanguageModel,
+        tools: Sequence[tool.Tool],
+        component_order: Sequence[str],
+        max_tool_calls: int = 5,
+    ) -> None:
+        super().__init__()
+        self._model = model
+        self._tools = list(tools)
+        self._component_order = list(component_order)
+        self._max_tool_calls = max_tool_calls
+
+    def get_action_attempt(
+        self, contexts: entity_component.ComponentContextMapping, action_spec: entity_lib.ActionSpec
+    ) -> str:
+        if action_spec.output_type != entity_lib.OutputType.FREE:
+            raise NotImplementedError(f"ToolUseAct only answers free-text action specs, not {action_spec.output_type}")
+        name = self.get_entity().name
+        prompt = interactive_document_tools.InteractiveDocumentWithTools(
+            self._model, tools=self._tools, max_tool_calls_per_question=self._max_tool_calls,
+            max_tool_result_length=2000,
+        )
+        prompt.statement("\n".join(contexts[key] for key in self._component_order if contexts[key]))
+        try:
+            # Generous max_tokens: Gemini counts its thinking tokens against it.
+            answer = prompt.open_question(
+                action_spec.call_to_action.replace("{name}", name),
+                max_tokens=16_000, terminators=(), question_label="Exercise",
+            )
+        except Exception as e:  # one failed LLM call should not take the agent down for the whole run
+            if isinstance(e, tenacity.RetryError):
+                e = e.last_attempt.exception()
+            log(f"  {name} LLM error: {type(e).__name__}: {str(e)[:200]}")
+            answer = ""
+        for content in prompt.contents():
+            if interactive_document_tools.TOOL_CALL_TAG in content.tags:
+                log(f"  {name} {content.text.strip()}")
+        self._logging_channel({"Summary": f"Action: {answer}", "Value": answer,
+                               "Prompt": prompt.view().text().splitlines()})
+        return f"{name}: {' '.join(answer.split())}"
+
+    def get_state(self) -> entity_component.ComponentState:
+        return {}
+
+    def set_state(self, state: entity_component.ComponentState) -> None:
+        pass
+
+
+@dataclasses.dataclass
+class PersonaAgent(prefab_lib.Prefab):
+    """Prefab for an entity with a private persona, an index of the others, notes, recent observations and tools."""
+
+    description: str = (
+        "An entity with a private persona, an index of the other entities, notes it writes itself with a remember "
+        "tool, its most recent observations, and any extra tools."
+    )
+    params: Mapping[str, Any] = dataclasses.field(
+        default_factory=lambda: {
+            "name": "Alice",  # letters, digits and underscores; other entities address it by this name
+            "role": "a negotiator",
+            "persona": "",  # private: objectives, constraints, style
+            "context": "",  # the shared situation, e.g. committee and agenda
+            "directory": [],  # [{"name", "role", "description"}] for every entity; descriptions are public
+            "tools": [],  # tools that don't need to know who calls them, e.g. web search
+            "history_length": 50,  # observations kept in the prompt
+            "max_tool_calls": 5,  # per turn, before the entity must answer
+        }
+    )
+
+    def build(
+        self,
+        model: language_model.LanguageModel,
+        memory_bank: basic_associative_memory.AssociativeMemoryBank,
+    ) -> entity_agent_with_logging.EntityAgentWithLogging:
+        p = self.params
+        name = p["name"]
+        others = "\n".join(
+            f"- {c['name']} ({c['role']}): {c['description']}" for c in p.get("directory", []) if c["name"] != name
+        )
+        notes = Notes()
+        components = {
+            "Instructions": agent_components.constant.Constant(
+                state=(
+                    f"You are {name}, {p.get('role', 'a negotiator')}.\n{p.get('persona', '')}\n\n"
+                    f"{p.get('context', '')}\n\n"
+                    "Others only learn what you do through your moves; everything else you write stays private. "
+                    "Use the remember tool for anything you need later. Be brief."
+                ),
+                pre_act_label="Instructions",
+            ),
+            "Directory": agent_components.constant.Constant(state=others, pre_act_label="Others you can message"),
+            "Notes": notes,
+            OBSERVATION_KEY: agent_components.observation.LastNObservations(
+                history_length=p.get("history_length", 50),
+                pre_act_label="What you have seen and heard (oldest first)",
+            ),
+            "observation_to_memory": agent_components.observation.ObservationToMemory(),
+            MEMORY_KEY: agent_components.memory.AssociativeMemory(memory_bank=memory_bank),
+        }
+        remember = FunctionTool(notes.remember, "remember", "Save a fact to your long-term notes. Args: note (str)")
+        act = ToolUseAct(
+            model,
+            tools=[*p.get("tools", []), remember],
+            component_order=["Instructions", "Directory", "Notes", OBSERVATION_KEY],
+            max_tool_calls=p.get("max_tool_calls", 5),
+        )
+        return entity_agent_with_logging.EntityAgentWithLogging(
+            agent_name=name, act_component=act, context_components=components
+        )

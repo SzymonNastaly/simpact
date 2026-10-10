@@ -9,7 +9,7 @@ from statistics import mean
 from typing import TYPE_CHECKING
 
 from .agents import average_commitments, policy_distance
-from .models import ClimateCommitment
+from .models import ClimateCommitment, Role
 
 if TYPE_CHECKING:
     from .simulation import Simulation
@@ -104,6 +104,8 @@ def calculate_metrics(sim: Simulation) -> dict:
             "agreements_secured": agreements,
             "mandate_commitment_distance": policy_distance(final[region], mandate.approved_commitment)}
     status_counts = Counter(o.status for o in sim.offers.values())
+    meetings = list(sim.hub.meetings.values())
+    delegation_of = {name: member.brief.delegation.value for name, member in sim.agents.items()}
     fulfilled = [o for o in sim.offers.values() if o.status == "fulfilled"]
     return {"metric_notes": "Policy distances normalize years by 74, rates by 10, forests by 100 and finance by 300. Turn balance is normalized Shannon entropy; equal speaking turns are scheduled, not emergent. Objective scores, finance allocation, warming and regional risk from the mock are experimental diagnostics, not national welfare or climate science.",
         "global": {"initial_warming_celsius": sim.outcomes[1].warming_celsius,
@@ -115,6 +117,10 @@ def calculate_metrics(sim: Simulation) -> dict:
                    "rounds_completed": max(sim.commitments), "finance": finance,
                    "mean_commitment_change": mean(policy_distance(initial[k], final[k]) for k in final),
                    "offer_status_counts": dict(status_counts), "agreements_fulfilled": len(fulfilled),
+                   "meetings": {"requested": len(meetings), "status_counts": dict(Counter(m.status for m in meetings)),
+                                "messages": sum(len(m.messages) for m in meetings),
+                                "cross_delegation": sum(len({delegation_of[p] for p in m.participants}) > 1 for m in meetings),
+                                "non_spokesperson_senders": sum(sim.agents[m.sender].role != Role.HEAD for m in meetings)},
                    "agreement_types": {"public": sum(o.public for o in fulfilled), "private": sum(not o.public for o in fulfilled),
                                        "conditional": sum(bool(o.conditions) for o in fulfilled), "coalition": sum(len(o.recipients) > 1 for o in fulfilled)}},
         "delegations": delegations, "internal_teams": teams}
@@ -129,7 +135,9 @@ def render_report(sim: Simulation, metrics: dict) -> str:
         f"Warming: **{global_metrics['initial_warming_celsius']:.2f} → {global_metrics['final_warming_celsius']:.2f} °C**.",
         f"Below 2°C: {global_metrics['target_2c_achieved']}. At/below 1.5°C: {global_metrics['target_1_5c_achieved']}.",
         f"Finance: {finance['contributions_billion_per_year']:.1f} billion/year contributed; {finance['requests_billion_per_year']:.1f} requested; gap {finance['funding_gap_billion_per_year']:.1f}.",
-        f"Fulfilled agreements: {global_metrics['agreements_fulfilled']}; offer states: {global_metrics['offer_status_counts']}.", "",
+        f"Fulfilled agreements: {global_metrics['agreements_fulfilled']}; offer states: {global_metrics['offer_status_counts']}.",
+        f"Member meetings: {global_metrics['meetings']['requested']} requested {global_metrics['meetings']['status_counts']}; "
+        f"{global_metrics['meetings']['messages']} messages; {global_metrics['meetings']['cross_delegation']} across delegations.", "",
         "| Delegation | Annual reduction: initial → final | Mandate drift | Disagreement: initial → final | Leader word share |", "|---|---:|---:|---:|---:|"]
     for region in sim.teams:
         team = metrics["internal_teams"][region]

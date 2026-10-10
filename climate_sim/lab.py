@@ -83,7 +83,10 @@ class Lab:
                     "disagreement_before": before, "disagreement_after": after,
                     "pairwise_distance": [{"a": a, "b": b, "distance": policy_distance(ClimateCommitment.model_validate(ca), ClimateCommitment.model_validate(cb))}
                         for a, ca in last_positions.items() for b, cb in last_positions.items() if a < b]}
-            rounds[str(round_number)] = {"teams": teams,
+            # Agent meetings of this round, in their latest recorded state. Meeting events are scoped to their exact
+            # participants, so `visible` already holds only what this perspective may see.
+            meetings = {e.payload["meeting"]["id"]: e.payload["meeting"] for e in round_events if e.kind.startswith("meeting_")}
+            rounds[str(round_number)] = {"teams": teams, "meetings": list(meetings.values()),
                 "public_events": [e.model_dump(mode="json") for e in round_events if e.visibility == "public" and e.kind in ("summit_speech", "commitments", "negotiation_offer")],
                 "climate_outcome": self.state["outcomes_by_round"].get(str(round_number))}
         return {"run": self.run_name, "scope": scope, "config": self.state["config"], "roster": roster,

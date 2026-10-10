@@ -3,10 +3,8 @@ name = "simpact"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "autogen-core==0.7.5",
-    "autogen-ext[openai]==0.7.5",
-    "google-genai>=2.29",
     "gdm-concordia==2.4.0",
+    "google-genai>=2.29",
     "pydantic>=2.10,<3",
     "pypdf>=6,<7",
 ]
@@ -16,3 +14,4 @@ dev = ["pytest>=8,<10"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # climate_sim and check_scenario import from the project root
