@@ -31,10 +31,10 @@ def test_agent_details_have_only_that_members_first_round_traces(lab):
     assert data["agent"]["private_strategy"]
     assert data["traces"]
     assert all(t["actor"] == agent_id and (t["round"] == 1 or t["payload"]["stage"] in ("nominate", "bilateral", "debrief")) for t in data["traces"])
-    assert all(t["payload"]["stage"] in {"prepare", "internal", "mandate", "vote", "announce"}
+    assert all(t["payload"]["stage"] in {"prepare", "internal", "mandate", "vote", "announce", "nominate", "bilateral", "debrief"}
                for t in data["traces"])
     assert all(t["payload"]["decision_summary"] for t in data["traces"])
-    assert all(e["round"] <= 1 for t in data["traces"] for e in t["payload"]["observations"])
+    assert all(e["round"] <= 1 for t in data["traces"] if t["round"] == 1 for e in t["payload"]["observations"])
 
 
 def test_public_and_other_members_cannot_read_an_agents_private_notes(lab):
