@@ -54,9 +54,8 @@
       const dots = members.slice(0,6).map(agent => `<span class="member-dot ${roleClass(agent)}" title="${esc(roleName(agent))}">${esc(initials(agent))}</span>`).join('');
       const live = country.live;
       const completed = country.completed || live?.phase === 'completed';
-      const highlight = completed && ['usa','eu'].includes(country.id);
       const status = completed ? 'Meeting concluded' : live?.status === 'error' ? 'Retry needed' : live?.active ? 'Conversation running' : live?.messages ? 'Conversation paused' : 'Ready to begin';
-      return `<article class="country-card${highlight ? ' country-completed' : ''}" style="--country-color:${colors[country.id] || '#edf1e9'}"><button type="button" class="country-open" data-country="${esc(country.id)}" style="--country-color:${colors[country.id] || '#edf1e9'}" aria-label="Open ${esc(country.name)}, ${members.length} agents">
+      return `<article class="country-card${completed ? ' country-completed' : ''}" style="--country-color:${colors[country.id] || '#edf1e9'}"><button type="button" class="country-open" data-country="${esc(country.id)}" style="--country-color:${colors[country.id] || '#edf1e9'}" aria-label="Open ${esc(country.name)}, ${members.length} agents">
         <span class="country-card-top"><span class="country-code" aria-hidden="true">${esc(codes[country.id] || country.id.slice(0,2).toUpperCase())}</span><span class="card-arrow" aria-hidden="true">↗</span></span>
         <span class="country-name">${esc(country.name)}</span><span class="country-meta">${members.length} ${members.length === 1 ? 'agent' : 'agents'}</span>
         <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>
