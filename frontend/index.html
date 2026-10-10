@@ -14,6 +14,13 @@
     <section id="country-view" aria-labelledby="round-title">
       <div class="intro"><p class="eyebrow">THE FIRST CONVERSATION</p><h1 id="round-title">Round 1</h1><p class="lead">Every country starts with a conversation.<br>Choose a delegation to listen in.</p><p class="roster-total" id="roster-total" aria-live="polite">Loading delegations…</p></div>
       <div id="countries" class="country-grid" aria-label="Countries"></div>
+      <button id="bilaterals-entry" class="bilaterals-entry" type="button" hidden><span><span class="eyebrow">ROUND 2 · BILATERALS</span><span class="entry-title">One-to-one conversations</span><span class="entry-status" id="bilaterals-entry-status"></span></span><span class="card-arrow" aria-hidden="true">↗</span></button>
+    </section>
+    <section id="bilaterals-view" aria-labelledby="bilaterals-title" hidden>
+      <button id="back-from-bilaterals" class="back-button" type="button"><span aria-hidden="true">←</span> All countries</button>
+      <div class="country-heading"><p class="eyebrow">ROUND 2 · BILATERALS</p><h1 id="bilaterals-title" tabindex="-1">Bilaterals</h1><p class="lead">Every agent names who it wants to talk to. Pairs across countries are matched first; each pair talks privately, then both report back to their own team.</p></div>
+      <div id="bilateral-controls" class="live-controls" hidden><div><p id="bilateral-status" role="status"></p><small id="bilateral-detail"></small></div><button id="bilateral-control" type="button">Start bilaterals</button></div>
+      <div class="bilateral-layout"><div id="bilateral-slots" class="bilateral-slots" aria-label="Bilateral conversations"></div><section id="bilateral-conversation" class="bilateral-conversation" aria-live="polite"></section></div>
     </section>
     <section id="discussion-view" aria-labelledby="country-title" hidden>
       <button id="back-to-countries" class="back-button" type="button"><span aria-hidden="true">←</span> All countries</button>

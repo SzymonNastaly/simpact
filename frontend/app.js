@@ -2,10 +2,10 @@
 (() => {
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const roles = {head_negotiator:'Head negotiator',economic_minister:'Economic minister',climate_adviser:'Climate adviser'};
+  const roles = {head_negotiator:'Head negotiator',economic_minister:'Economic minister',climate_adviser:'Climate adviser',observer:'Observer'};
   const codes = {usa:'US',eu:'EU',china:'CN',india:'IN',other_developed:'OD',other_developing:'OG',brazil:'BR',saudi_arabia:'SA'};
   const colors = {usa:'#e9ede3',eu:'#e1e8ee',china:'#efe2da',india:'#f3e8d4',other_developed:'#e9e6ef',other_developing:'#e2ece4',brazil:'#e5edda',saudi_arabia:'#ece6d6'};
-  const stages = {prepare:'Preparation',internal:'Team discussion',mandate:'Mandate proposal',vote:'Team vote',announce:'Opening announcement',summary:'End-of-round summary',plan:'Next-round action plan'};
+  const stages = {prepare:'Preparation',internal:'Team discussion',mandate:'Mandate proposal',vote:'Team vote',announce:'Opening announcement',summary:'End-of-round summary',plan:'Next-round action plan',nominate:'Choosing partners',bilateral:'Bilateral message',debrief:'Report to team'};
   let session = null;
   let selectedCountry = null;
   let selectedAgent = null;
@@ -15,17 +15,25 @@
   let polling = false;
   let pollTimer = null;
   let controlPending = false;
+  let bilaterals = null;
+  let bilateralView = false;
+  let selectedMeeting = null;
 
   const roleName = agent => {
     const name = roles[agent.role] || agent.role;
     const peers = session?.countries.find(country => country.id === agent.delegation)?.members.filter(member => member.role === agent.role) || [];
     return peers.length > 1 ? `${name} ${peers.findIndex(member => member.agent === agent.agent) + 1}` : name;
   };
-  const roleClass = agent => agent.role.startsWith('economic') ? 'economic' : agent.role.startsWith('climate') ? 'climate' : 'head';
+  const roleClass = agent => agent.role.startsWith('economic') ? 'economic' : agent.role.startsWith('climate') ? 'climate' : agent.role === 'observer' ? 'observer' : 'head';
   const initials = agent => roleName(agent).split(' ').map(word => word[0]).slice(0,2).join('').toUpperCase();
   const avatar = agent => `<span class="agent-avatar ${roleClass(agent)}" aria-hidden="true">${esc(initials(agent))}</span>`;
   const empty = text => `<p class="empty-state">${esc(text)}</p>`;
   const countryById = id => session.countries.find(country => country.id === id);
+  // Any agent, observers included: countries list their members, the bilaterals directory everyone.
+  const agentById = id => session?.countries.flatMap(country => country.members).find(member => member.agent === id)
+    || bilaterals?.participants.find(member => member.agent === id);
+  const groupName = agent => countryById(agent.delegation)?.name || bilaterals?.participants.find(member => member.agent === agent.agent)?.delegation_name || agent.delegation;
+  const fullName = id => { const agent = agentById(id); return agent ? (agent.role === 'observer' ? groupName(agent) : `${groupName(agent)} · ${roleName(agent)}`) : id; };
 
   async function read(path) {
     const response = await fetch(path);
@@ -148,8 +156,9 @@
     })}];
     return rounds.map((round,roundIndex) => {
       let contribution = 0;
-      return `<section class="thinking-round"><h3>Round ${esc(round.round)}</h3>${round.traces.length ? round.traces.map((trace,index) => {
-        const label = trace.stage === 'internal' ? `Contribution ${++contribution}` : stages[trace.stage] || trace.stage;
+      let message = 0;
+      return `<section class="thinking-round"><h3>${esc(round.title || `Round ${round.round}`)}</h3>${round.traces.length ? round.traces.map((trace,index) => {
+        const label = trace.stage === 'internal' ? `Contribution ${++contribution}` : trace.stage === 'bilateral' ? `Bilateral message ${++message}` : stages[trace.stage] || trace.stage;
         const selected = trace.id === selectedTrace;
         const expanded = selected || (!selectedTrace && roundIndex === rounds.length - 1 && index === round.traces.length - 1);
         const source = trace.source === 'provider_summary' ? 'Provider thought summary' : trace.source === 'instrumented_scripted_policy' ? 'Scripted policy summary' : 'Recorded decision summary';
@@ -159,13 +168,12 @@
   }
 
   async function openAgent(id,trigger,traceId = null,refresh = false) {
-    const country = countryById(selectedCountry);
-    const agent = country?.members.find(member => member.agent === id);
+    const agent = agentById(id);
     if (!agent) return;
     selectedAgent = id;
     if (!refresh) { agentTrigger = trigger; selectedTrace = traceId; }
     const request = ++agentRequest;
-    $('agent-country').textContent = `${country.name} · Round 1`;
+    $('agent-country').textContent = groupName(agent);
     $('agent-title').textContent = roleName(agent);
     if (!refresh) $('agent-details').innerHTML = '<p class="loading">Loading thinking traces…</p>';
     if (!$('agent-dialog').open) $('agent-dialog').showModal();
@@ -184,6 +192,90 @@
     }
   }
 
+  function renderBilateralEntry() {
+    const live = bilaterals?.live;
+    const meetings = (bilaterals?.rounds || []).flatMap(round => round.slots).flatMap(slot => slot.meetings).length;
+    $('bilaterals-entry').hidden = !bilaterals || (!live?.enabled && !meetings);
+    if ($('bilaterals-entry').hidden) return;
+    $('bilaterals-entry-status').textContent = live && !live.open
+      ? `Opens once every delegation has concluded Round 1 · ${live.concluded} of ${live.countries} concluded`
+      : `${meetings} ${meetings === 1 ? 'conversation' : 'conversations'}${live ? ` · ${live.done ? 'all slots complete' : `slot ${live.slot} of ${live.slots}`}` : ''}`;
+  }
+
+  function openBilaterals() {
+    bilateralView = true;
+    document.querySelector('.round-label').textContent = 'ROUND 02';
+    $('country-view').hidden = true;
+    $('bilaterals-view').hidden = false;
+    renderBilaterals();
+    $('bilaterals-title').focus();
+    window.scrollTo({top:0});
+  }
+
+  function closeBilaterals() {
+    closeAgent();
+    bilateralView = false;
+    document.querySelector('.round-label').textContent = 'ROUND 01';
+    $('bilaterals-view').hidden = true;
+    $('country-view').hidden = false;
+    $('bilaterals-entry').focus();
+    window.scrollTo({top:0});
+  }
+
+  const meetingsOf = () => (bilaterals?.rounds || []).flatMap(round => round.slots.flatMap(slot => slot.meetings));
+  const person = id => { const agent = agentById(id); return `${agent ? avatar(agent) : ''}<span class="person-name"><strong>${esc(agent && agent.role !== 'observer' ? groupName(agent) : fullName(id))}</strong><small>${esc(agent ? roleName(agent) : '')}</small></span>`; };
+  const meetingState = meeting => meeting.status === 'active' ? 'Talking' : meeting.close_reason === 'limit' ? 'Message limit' : meeting.messages.length <= 1 && meeting.closed_by === meeting.partner ? 'Declined' : 'Ended';
+
+  function renderBilaterals() {
+    renderBilateralControls();
+    const rounds = bilaterals?.rounds || [];
+    if (!meetingsOf().some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetingsOf()[0]?.id || null;
+    $('bilateral-slots').innerHTML = rounds.length ? rounds.map(round => round.slots.map(slot => {
+      const requests = Object.entries(slot.nominations);
+      return `<section class="bilateral-slot"><h2>${rounds.length > 1 ? `Before Round ${esc(round.round)} · ` : ''}Slot ${esc(slot.slot)}</h2><p class="slot-meta">${slot.paired ? `${slot.meetings.length} ${slot.meetings.length === 1 ? 'conversation' : 'conversations'}${slot.unmatched.length ? ` · ${slot.unmatched.length} without a partner` : ''}` : `${requests.length} of ${bilaterals.participants.length} agents have chosen partners`}</p>
+        ${slot.meetings.map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span>${meeting.mutual ? '<span class="chip">Both asked</span>' : ''}<span>${meeting.messages.length} ${meeting.messages.length === 1 ? 'message' : 'messages'}</span></span></button>`).join('')}
+        ${requests.length ? `<details class="requests"><summary>Who asked for whom</summary><ul>${requests.map(([id,item]) => `<li><button type="button" class="speaker" data-agent="${esc(id)}"${item.trace_id ? ` data-trace="${esc(item.trace_id)}"` : ''}>${esc(fullName(id))}</button> → ${item.requests.length ? item.requests.map(request => `${esc(fullName(request.member))} <span class="request-topic">(${esc(request.topic)})</span>`).join(', ') : '<span class="request-topic">nobody</span>'}</li>`).join('')}</ul></details>` : ''}</section>`;
+    }).join('')).join('') : empty(bilaterals?.live?.open ? 'Start the bilaterals. Agents first choose who they want to talk to.' : 'Bilaterals start after every delegation has concluded Round 1.');
+    renderMeeting();
+  }
+
+  function renderBilateralControls() {
+    const live = bilaterals?.live;
+    $('bilateral-controls').hidden = !live;
+    if (!live) return;
+    const thinking = live.thinking_agents.length;
+    const statuses = {idle:'Ready to begin',queued:'Waiting for the next step',paused:'Bilaterals paused',slot_done:`Slot ${live.slot - 1} complete · read the conversations, then start slot ${live.slot}`,completed:'All bilateral slots are complete',error:live.error};
+    $('bilateral-status').textContent = !live.open ? `Opens once every delegation has concluded Round 1 · ${live.concluded} of ${live.countries} concluded`
+      : live.status === 'thinking' ? `${thinking} ${thinking === 1 ? 'agent is' : 'agents are'} thinking…` : live.status === 'pausing' ? 'Pausing after the current step…' : statuses[live.status] || live.status;
+    $('bilateral-detail').textContent = `${live.slots} ${live.slots === 1 ? 'slot' : 'slots'} · up to ${live.message_limit} messages per conversation · each start runs one slot`;
+    $('bilateral-control').textContent = live.done ? 'Bilaterals complete' : live.active ? 'Pause bilaterals' : live.status === 'idle' ? 'Start bilaterals' : `Continue slot ${live.slot}`;
+    $('bilateral-control').disabled = controlPending || !live.open || live.done || live.status === 'pausing';
+  }
+
+  function renderMeeting() {
+    const meeting = meetingsOf().find(item => item.id === selectedMeeting);
+    if (!meeting) { $('bilateral-conversation').innerHTML = ''; return; }
+    const side = id => id === meeting.initiator ? 'left' : 'right';
+    const asked = meeting.mutual ? 'Both asked for this meeting.' : `${fullName(meeting.initiator)} asked for this meeting.`;
+    const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : `${fullName(meeting.closed_by)} ended the conversation.`;
+    $('bilateral-conversation').innerHTML = `<p class="eyebrow">SLOT ${esc(meeting.slot)} · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
+      <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><p class="message-text">${esc(message.text)}</p></div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
+      ${ended ? `<p class="conversation-note">${esc(ended)}</p>` : ''}
+      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><p>${esc(report.summary)}</p>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}</article>`).join('')}</div>` : ''}`;
+  }
+
+  async function controlBilaterals() {
+    if (!bilaterals?.live || controlPending) return;
+    controlPending = true;
+    renderBilateralControls();
+    try {
+      const response = await fetch('/api/actions',{method:'POST',headers:{'Content-Type':'application/json','X-Simpact-Lab':'1'},body:JSON.stringify({track:'bilaterals',operation:bilaterals.live.active ? 'pause' : 'start'})});
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'The bilaterals control failed. Please try again.');
+      Object.assign(bilaterals.live, await response.json());
+    } catch (error) { showError(error); }
+    finally { controlPending = false; renderBilateralControls(); }
+  }
+
   function closeAgent() {
     ++agentRequest;
     selectedAgent = null;
@@ -200,7 +292,10 @@
     try {
       session = await read('/api/round-one?scope=researcher');
       if (session.round !== 1 || !Array.isArray(session.countries)) throw new Error('The Round 1 record is unavailable.');
+      bilaterals = await read('/api/bilaterals?scope=researcher');
       renderCountries();
+      renderBilateralEntry();
+      if (bilateralView) renderBilaterals();
       if (selectedCountry) openCountry(selectedCountry);
       if (session.mode === 'live' && !pollTimer) pollTimer = window.setTimeout(poll,1200);
     } catch (error) { $('roster-total').textContent = 'Session unavailable'; showError(error); }
@@ -216,6 +311,12 @@
       const previous = selectedCountry ? countryById(selectedCountry) : null;
       session = next;
       renderCountries();
+      const nextBilaterals = await read('/api/bilaterals?scope=researcher');
+      const changed = JSON.stringify(nextBilaterals) !== JSON.stringify(bilaterals);
+      bilaterals = nextBilaterals;
+      renderBilateralEntry();
+      if (bilateralView && changed) renderBilaterals();
+      if (bilateralView && changed && selectedAgent) await openAgent(selectedAgent,agentTrigger,selectedTrace,true);
       if (selectedCountry) {
         const country = countryById(selectedCountry);
         if (country.discussion.length !== previous?.discussion.length) renderDiscussion(country);
@@ -246,13 +347,21 @@
   }
 
   document.addEventListener('click',event => {
-    const button = event.target.closest('button[data-country], button[data-agent], button[data-control-country]');
+    const button = event.target.closest('button[data-country], button[data-agent], button[data-control-country], button[data-meeting]');
     if (!button) return;
     if (button.dataset.controlCountry) controlConversation(null,button.dataset.controlCountry);
+    else if (button.dataset.meeting) {
+      selectedMeeting = button.dataset.meeting;
+      renderBilaterals();
+      if (window.matchMedia('(max-width: 850px)').matches) $('bilateral-conversation').scrollIntoView({block:'start'});
+    }
     else if (button.dataset.country) openCountry(button.dataset.country);
     else if (button.dataset.agent) openAgent(button.dataset.agent,button,button.dataset.trace || null);
   });
   $('back-to-countries').addEventListener('click',goBack);
+  $('bilaterals-entry').addEventListener('click',openBilaterals);
+  $('back-from-bilaterals').addEventListener('click',closeBilaterals);
+  $('bilateral-control').addEventListener('click',controlBilaterals);
   $('close-agent').addEventListener('click',closeAgent);
   $('agent-dialog').addEventListener('close',() => { ++agentRequest; selectedAgent = null; $('agent-details').innerHTML = ''; });
   $('retry').addEventListener('click',load);

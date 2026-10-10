@@ -109,10 +109,10 @@ class ToolUseAct(entity_component.ActingComponent, entity_component.ComponentWit
         )
         prompt.statement("\n".join(contexts[key] for key in self._component_order if contexts[key]))
         try:
-            # Generous max_tokens: Gemini counts its thinking tokens against it.
+            # No max_tokens cap: Concordia's default is 50 and Gemini counts its thinking tokens against it.
             answer = prompt.open_question(
                 action_spec.call_to_action.replace("{name}", name),
-                max_tokens=16_000, terminators=(), question_label="Exercise",
+                max_tokens=None, terminators=(), question_label="Exercise",
             )
         except Exception as e:  # one failed LLM call should not take the agent down for the whole run
             if isinstance(e, tenacity.RetryError):
