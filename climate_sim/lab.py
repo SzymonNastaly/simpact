@@ -167,20 +167,24 @@ class Lab:
         groups: dict[tuple, list] = {}
         for event in traces:
             payload = event["payload"]
-            calls = payload.get("generation", {}).get("calls", [])
-            accepted = next((call for call in reversed(calls) if call.get("accepted")), {})
-            thoughts = accepted.get("thought_summaries", []) if accepted.get("attempt", 1) == 1 else []
-            summary = payload.get("decision_summary") or {}
             key = (event["round"], "Bilaterals") if payload["stage"] in BILATERAL_STAGES else (1, None)
-            groups.setdefault(key, []).append({"id": event["id"], "stage": payload["stage"],
-                "thoughts": thoughts or ([summary["summary"]] if summary.get("summary") else []),
-                "source": "provider_summary" if thoughts else payload.get("summary_source", "not_recorded")})
+            groups.setdefault(key, []).append({"id": event["id"], "stage": payload["stage"], **self.thinking(payload)})
         bilateral_rounds = sum(title == "Bilaterals" for _, title in groups)
         thinking_rounds = [{"round": number, "traces": items, "title": None if title is None else
                             ("Bilaterals" if bilateral_rounds == 1 else f"Bilaterals before Round {number}")}
                            for (number, title), items in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1] or ""))]
         return {"round": 1, "agent": agent, "traces": traces, "failures": failures,
                 "thinking_rounds": thinking_rounds or [{"round": 1, "traces": []}]}
+
+    @staticmethod
+    def thinking(trace: dict) -> dict:
+        """The thinking shown for one decision: provider thought summaries, else the agent's decision summary."""
+        calls = trace.get("generation", {}).get("calls", [])
+        accepted = next((call for call in reversed(calls) if call.get("accepted")), {})
+        thoughts = accepted.get("thought_summaries", []) if accepted.get("attempt", 1) == 1 else []
+        summary = trace.get("decision_summary") or {}
+        return {"thoughts": thoughts or ([summary["summary"]] if summary.get("summary") else []),
+                "source": "provider_summary" if thoughts else trace.get("summary_source", "not_recorded")}
 
     def participant_directory(self) -> list[dict]:
         names = {**{k: b.title for k, b in self.briefs.items()}, **{k: b.title for k, b in self.observer_briefs.items()}}
@@ -194,8 +198,10 @@ class Lab:
         if not researcher and scope != "public" and viewer is None:
             raise PermissionError("Unknown viewer")
         visible = [e for e in self.events if researcher or (viewer and e.visible_to(scope, viewer["delegation"]))]
-        traces = {resolved: e.id for e in self.events if e.kind == "agent_trace" and (researcher or scope == e.actor)
-                  for resolved in e.payload.get("resolution_event_ids", [])}
+        trace_events = {resolved: e for e in self.events if e.kind == "agent_trace" and (researcher or scope == e.actor)
+                        for resolved in e.payload.get("resolution_event_ids", [])}
+        traces = {resolved: e.id for resolved, e in trace_events.items()}
+        thinking = lambda event_id: self.thinking(trace_events[event_id].payload) if event_id in trace_events else None
         rounds: dict[int, dict[int, dict]] = {}
         slot_of = lambda number, slot: rounds.setdefault(number, {}).setdefault(slot, {
             "slot": slot, "nominations": {}, "unmatched": [], "paired": False, "finished": False, "meetings": []})
@@ -209,10 +215,8 @@ class Lab:
             elif event.kind == "bilateral_slot_finished":
                 slot_of(event.round, event.payload["slot"])["finished"] = True
         for meeting in fold_meetings(visible).values():
-            for message in meeting["messages"]:
-                message["trace_id"] = traces.get(message["event_id"])
-            for report in meeting["reports"].values():
-                report["trace_id"] = traces.get(report["event_id"])
+            for item in (*meeting["messages"], *meeting["reports"].values()):
+                item.update(trace_id=traces.get(item["event_id"]), thinking=thinking(item["event_id"]))
             slot_of(meeting["round"], meeting["slot"])["meetings"].append(meeting)
         return {"mode": "recorded", "run": self.run_name, "backend": self.state["config"]["backend"],
                 "participants": self.participant_directory(),

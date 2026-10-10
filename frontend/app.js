@@ -248,16 +248,22 @@
     $('bilateral-control').disabled = controlPending || !live.open || live.done || live.status === 'pausing';
   }
 
+  // One message's or report's thinking, inline; it keeps its open state across live refreshes.
+  const thinkingFor = (id,item) => item.thinking ? `<details class="bubble-thinking" id="thinking-${esc(id)}"><summary>Thinking</summary><div class="trace-text"><small>${esc(item.thinking.source === 'provider_summary' ? 'Provider thought summary' : item.thinking.source === 'instrumented_scripted_policy' ? 'Scripted policy summary' : 'Recorded decision summary')}</small>${item.thinking.thoughts.length ? item.thinking.thoughts.map(thoughtText).join('') : '<p>No thinking summary was returned.</p>'}</div></details>` : '';
+
   function renderMeeting() {
     const meeting = meetingsOf().find(item => item.id === selectedMeeting);
     if (!meeting) { $('bilateral-conversation').innerHTML = ''; return; }
+    const open = [...$('bilateral-conversation').querySelectorAll('details[open]')].map(item => item.id);
     const side = id => id === meeting.initiator ? 'left' : 'right';
     const asked = meeting.mutual ? 'Both asked for this meeting.' : `${fullName(meeting.initiator)} asked for this meeting.`;
     const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : `${fullName(meeting.closed_by)} ended the conversation.`;
     $('bilateral-conversation').innerHTML = `<p class="eyebrow">SLOT ${esc(meeting.slot)} · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
-      <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><p class="message-text">${esc(message.text)}</p></div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
+      <div class="meeting-agents">${[meeting.initiator,meeting.partner].map(id => { const agent = agentById(id); return `<button type="button" class="agent-button" data-agent="${esc(id)}">${agent ? avatar(agent) : ''}<span><strong>${esc(fullName(id))}</strong><small>All thinking traces</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`; }).join('')}</div>
+      <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><p class="message-text">${esc(message.text)}</p>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
       ${ended ? `<p class="conversation-note">${esc(ended)}</p>` : ''}
-      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><p>${esc(report.summary)}</p>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}</article>`).join('')}</div>` : ''}`;
+      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><p>${esc(report.summary)}</p>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${thinkingFor(report.event_id,report)}</article>`).join('')}</div>` : ''}`;
+    for (const id of open) { const detail = document.getElementById(id); if (detail) detail.open = true; }
   }
 
   async function controlBilaterals() {
