@@ -20,7 +20,7 @@ from concordia.environment.step_controller import StepController
 
 from .allocator import AgentAllocator
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
-from .bilaterals import Bilaterals, SUMMARY_STAGE
+from .bilaterals import Bilaterals, RELATIONS_STAGE, SUMMARY_STAGE
 from .lab import Lab
 from .memory import Event
 from .models import ClimateCommitment, MemberAction, SimulationConfig
@@ -162,7 +162,8 @@ class LiveLab(Lab):
                          for region in self.sim.teams}
         # Bilaterals open once every delegation has concluded Round 1; they belong to Round 2.
         self.bilateral = {"active": False, "status": "idle", "thinking_agents": [], "error": None}
-        self.sim.rapporteur.thinking_level, self.sim.rapporteur.include_thoughts = thinking_level, True
+        for observer in (self.sim.rapporteur, *self.sim.analysts):
+            observer.thinking_level, observer.include_thoughts = thinking_level, True
         if config.bilateral_slots:
             self.sim.bilaterals = AgentAllocator(self.sim.hub, self.sim.store, round_number=2,
                 message_limit=config.bilateral_messages)
@@ -209,6 +210,9 @@ class LiveLab(Lab):
             self.loops["bilaterals"] = (controller, thread)
             thread.start()
 
+    def _allocator_member(self, name):
+        return self.sim.agents.get(name) or next(m for m in self.sim.analysts if m.name == name)
+
     def _allocator_loop(self):
         """Dispatch independently; a slow conversation never holds up free agents or other pairs."""
         schedule = self.sim.bilaterals
@@ -225,7 +229,7 @@ class LiveLab(Lab):
                         continue
                     for stage, name in due:
                         schedule.inflight.add(name)
-                        context = self._bilateral_context(self.sim.agents[name], stage)
+                        context = self._bilateral_context(self._allocator_member(name), stage)
                         pool.submit(self._allocator_call, stage, name, context)
                     self.bilateral.update(status='thinking' if schedule.inflight else 'queued',
                                           thinking_agents=sorted(schedule.inflight))
@@ -233,7 +237,7 @@ class LiveLab(Lab):
                     self.condition.wait(timeout=.25)
 
     def _allocator_call(self, stage, name, context):
-        member, schedule = self.sim.agents[name], self.sim.bilaterals
+        member, schedule = self._allocator_member(name), self.sim.bilaterals
         def resolve(actions):
             with self.condition:
                 start = len(self.events)
@@ -247,7 +251,7 @@ class LiveLab(Lab):
             with self.condition:
                 self.bilateral.update(active=False, status='error', error=f'{name} failed. Continue to retry.')
                 self.sim.store.append('agent_call_failed', {'stage':stage, 'error_type':type(error).__name__,
-                    'generation':getattr(member.backend, 'last_generation', None)}, round=2,
+                    'generation':getattr(getattr(member, 'backend', None), 'last_generation', None)}, round=2,
                     visibility='individual', owners=[name], actor=name)
         finally:
             with self.condition:
@@ -290,7 +294,7 @@ class LiveLab(Lab):
                         pass
                     elif schedule.done:
                         control.update(active=False, status="completed")
-                    elif schedule.slot != state["slot"]:
+                    elif schedule.slot != state["slot"] and not schedule.slots_done:
                         # Stop between slots so the conversations can be read before the next round of requests.
                         control.update(active=False, status="slot_done")
                     else:
@@ -321,7 +325,7 @@ class LiveLab(Lab):
 
     def _bilateral_context(self, member: DelegationMember, stage: str) -> dict:
         self.sim.current_round = 2
-        if stage == SUMMARY_STAGE:
+        if stage in (SUMMARY_STAGE, RELATIONS_STAGE):
             return self.sim.bilateral_context(member, stage)
         context = self.sim.context(member, stage)
         context["events"] = self.sim.store.view(member.name, member.brief.delegation.value, len(self.events) + 1,

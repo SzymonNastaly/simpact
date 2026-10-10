@@ -199,5 +199,52 @@ window.SimpactViz = (() => {
     el.querySelectorAll('[data-slot]').forEach(button => button.addEventListener('click', () => onSlot?.(button.dataset.slot === 'all' ? 'all' : Number(button.dataset.slot))));
   }
 
-  return {positions, movement, network};
+  // Diverging blue (cooperative) <-> red (adversarial) through a neutral grey; never a hue at zero.
+  const POLES = {cool: [28, 92, 171], warm: [184, 49, 47], mid: [240, 239, 236]};
+  function divergingColor(score) {
+    const pole = score >= 0 ? POLES.cool : POLES.warm, t = Math.min(1, Math.abs(score));
+    const rgb = POLES.mid.map((m, i) => Math.round(m + (pole[i] - m) * t));
+    const light = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 > .55;
+    return {fill: `rgb(${rgb.join(',')})`, ink: light ? 'var(--ink)' : '#ffffff'};
+  }
+
+  // Bilaterals: how cooperative each pair of delegations was, averaged over independent Gemini analysts.
+  function relations(el, data, names) {
+    const round = (data.rounds || []).filter(r => r.relations).slice(-1)[0];
+    if (!round) { el.hidden = true; return; }
+    el.hidden = false;
+    const pairs = round.relations.pairs, analysts = round.relations.analysts;
+    const ids = (data.delegations || []).map(d => d.id).filter(id => pairs.some(p => p.a === id || p.b === id));
+    const nameOf = id => data.delegations.find(d => d.id === id)?.name || id;
+    const lookup = (a, b) => pairs.find(p => (p.a === a && p.b === b) || (p.a === b && p.b === a));
+    const width = Math.max(320, el.clientWidth || 900), labelW = width < 560 ? 92 : 170;
+    const cell = Math.max(30, Math.min(64, (width - labelW - 8) / Math.max(ids.length, 1)));
+    const top = width < 560 ? 92 : 120, height = top + cell * ids.length + 6;
+    const short = text => width < 560 && text.length > 14 ? `${text.slice(0, 13)}…` : text;
+    let body = '';
+    ids.forEach((id, i) => {
+      body += `<text x="${labelW - 10}" y="${top + i * cell + cell / 2 + 4}" class="viz-label" text-anchor="end">${esc(short(nameOf(id)))}</text>`;
+      const cx = labelW + i * cell + cell / 2;
+      body += `<text x="${cx}" y="${top - 10}" class="viz-label" transform="rotate(-40 ${cx} ${top - 10})">${esc(short(nameOf(id)))}</text>`;
+    });
+    ids.forEach((a, row) => ids.forEach((b, col) => {
+      const x = labelW + col * cell, y = top + row * cell;
+      if (a === b) { body += `<rect x="${x + 1}" y="${y + 1}" width="${cell - 2}" height="${cell - 2}" class="viz-cell-self"/>`; return; }
+      const pair = lookup(a, b);
+      if (!pair) { body += `<rect x="${x + 1}" y="${y + 1}" width="${cell - 2}" height="${cell - 2}" class="viz-cell-empty" data-tip="${esc(`<strong>${esc(nameOf(a))} · ${esc(nameOf(b))}</strong><br><span>No conversation between them</span>`)}"/>`; return; }
+      const color = divergingColor(pair.score);
+      const tipText = `<strong>${esc(nameOf(a))} · ${esc(nameOf(b))}</strong><br>${pair.score >= 0 ? 'Cooperative' : 'Adversarial'} ${pair.score > 0 ? '+' : ''}${fmt(pair.score, 2)} · analysts ranged ${fmt(pair.low, 2)} to ${fmt(pair.high, 2)}<br>${pair.ratings.map(r => `<span>${esc(r.analyst)} (${r.score > 0 ? '+' : ''}${fmt(r.score, 2)}): ${esc(r.rationale)}</span>`).join('<br>')}`;
+      body += `<g tabindex="0" class="viz-dot" data-tip="${esc(tipText)}"><rect x="${x + 1}" y="${y + 1}" width="${cell - 2}" height="${cell - 2}" rx="4" fill="${color.fill}"/>${cell >= 40 ? `<text x="${x + cell / 2}" y="${y + cell / 2 + 4}" text-anchor="middle" class="viz-cell-value" fill="${color.ink}">${pair.score > 0 ? '+' : ''}${fmt(pair.score, 1)}</text>` : ''}</g>`;
+    }));
+    const ranked = [...pairs].sort((p, q) => q.score - p.score);
+    const best = ranked[0], worst = ranked[ranked.length - 1];
+    const describe = p => `${esc(nameOf(p.a))} · ${esc(nameOf(p.b))} (${p.score > 0 ? '+' : ''}${fmt(p.score, 2)})`;
+    const legend = `<div class="viz-scale"><span>Adversarial −1</span><i></i><span>+1 Cooperative</span><span class="viz-scale-empty"><b></b>No conversation</span></div>`;
+    const table = `<details class="viz-table"><summary>Data table</summary><table><thead><tr><th>Delegations</th><th>Average</th><th>Range</th><th>Analysts’ reasons</th></tr></thead><tbody>${ranked.map(p => `<tr><td>${esc(nameOf(p.a))} · ${esc(nameOf(p.b))}</td><td>${fmt(p.score, 2)}</td><td>${fmt(p.low, 2)} to ${fmt(p.high, 2)}</td><td>${p.ratings.map(r => esc(r.rationale)).join('<br>')}</td></tr>`).join('')}</tbody></table></details>`;
+    el.innerHTML = `<div class="viz-heading"><h2>How the delegations relate</h2><p>${analysts} independent Gemini analysts read every conversation between two countries and rated it from adversarial (−1) to well coordinated (+1); each cell is their average. Researcher only.</p></div>
+      <p class="viz-callout">Most cooperative: <strong>${describe(best)}</strong>${pairs.length > 1 ? ` · ${worst.score < 0 ? 'Most adversarial' : 'Least cooperative'}: <strong>${describe(worst)}</strong>` : ''}</p>${legend}
+      <figure class="viz-figure">${svg(width, height, 'Cooperation between delegations')}${body}</svg></figure>${table}`;
+  }
+
+  return {positions, movement, network, relations};
 })();

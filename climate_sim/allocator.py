@@ -1,8 +1,9 @@
 """Continuous live bilateral allocation, with ranked requests and no round-wide barriers."""
 from __future__ import annotations
 
+import json
 import time
-from .bilaterals import Bilaterals, pair_requests
+from .bilaterals import ANALYSTS, RELATIONS_STAGE, Bilaterals, pair_requests
 from .models import PartnerRequest
 
 
@@ -71,14 +72,23 @@ class AgentAllocator(Bilaterals):
             self.waiting_since.pop(partner, None)
 
     @property
-    def done(self):
+    def conversations_done(self):
         plans = self._nominations()
-        return not self.inflight and all(not self.active_meeting(name) and not self.pending_report(name)
+        return not (self.inflight & set(self.hub.participants)) and all(not self.active_meeting(name) and not self.pending_report(name)
             and (len(self.partners(name)) >= self.max_partners or not self._candidates(name)
                  or (name in plans and not plans[name])) for name in self.hub.participants)
 
+    @property
+    def done(self):
+        return self.conversations_done and (not self._pairs_to_rate() or any(
+            e.payload.get('meeting_count') == len(self._meetings()) for e in self._events('bilateral_relations')))
+
     def due(self):
         self.allocate()
+        if self.conversations_done:
+            rated = {e.actor for e in self._events('bilateral_relation_rating')
+                     if e.payload.get('meeting_count') == len(self._meetings())}
+            return [(RELATIONS_STAGE, name) for name in ANALYSTS if name not in rated and name not in self.inflight] if not self.done else []
         now, plans, due = self.clock(), self._nominations(), []
         for name in self.hub.participants:
             if name in self.inflight:
@@ -115,6 +125,8 @@ class AgentAllocator(Bilaterals):
         return result
 
     def context(self, name, stage):
+        if stage == RELATIONS_STAGE:
+            return super().context(name, stage)
         if stage == 'nominate':
             return {'allocator_mode': True, 'already_met': sorted(self.partners(name)),
                     'max_partners': self.max_partners, 'remaining_partners': self.max_partners-len(self.partners(name)),
@@ -128,7 +140,24 @@ class AgentAllocator(Bilaterals):
 
     def resolve(self, stage, actions):
         for name, action in actions.items():
-            if stage == 'nominate':
+            if stage == RELATIONS_STAGE:
+                count = len(self._meetings())
+                self.store.append('bilateral_relation_rating', {'pairs':json.loads(action.speech)['pairs'], 'meeting_count':count},
+                                  round=self.round, visibility='individual', owners=['researcher'], actor=name)
+                ratings = {e.actor:e.payload['pairs'] for e in self._events('bilateral_relation_rating')
+                           if e.payload.get('meeting_count') == count}
+                if set(ratings) == set(ANALYSTS):
+                    combined = {}
+                    for actor, values in ratings.items():
+                        for rating in values:
+                            key = tuple(sorted((rating['a'],rating['b'])))
+                            combined.setdefault(key, []).append({'analyst':actor, 'score':rating['score'], 'rationale':rating['rationale']})
+                    pairs = [{'a':a,'b':b,'score':round(sum(r['score'] for r in rs)/len(rs),3),
+                              'low':min(r['score'] for r in rs),'high':max(r['score'] for r in rs),'ratings':rs}
+                             for (a,b),rs in sorted(combined.items())]
+                    self.store.append('bilateral_relations', {'pairs':pairs,'analysts':len(ANALYSTS),'meeting_count':count},
+                                      round=self.round, visibility='individual', owners=['researcher'])
+            elif stage == 'nominate':
                 if not self.available_for_plan(name):
                     raise ValueError('An occupied agent cannot change its partner plan')
                 ids = [r.member for r in action.partner_requests]

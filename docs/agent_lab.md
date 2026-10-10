@@ -104,6 +104,18 @@ their own requests, never another agent's private plan. Saved conversations and
 reports restore from events and count toward the limit. The offline batch runner
 retains its configurable slot schedule in `climate_sim/bilaterals.py`.
 
+After every slot a neutral Gemini rapporteur summarizes it, and after the last slot three
+independent Gemini analysts each rate how cooperative every pair of delegations that talked
+has been (-1 adversarial to +1 well coordinated); the game master averages them and keeps the
+spread. Both are researcher-only (owners `researcher`); agents never see them.
+
+## Charts
+
+`frontend/viz.js` draws plain SVG charts (the CSP allows no chart library): where each
+delegation's members stand on emission cuts and finance (home), how each member's proposal
+moved per message (country view), who talked to whom in the bilaterals, and the analysts'
+cooperation matrix. Every chart has tooltips and a data table.
+
 ## Eight delegations and observers
 
 `--world eight` splits Brazil and Saudi Arabia out of Other Developing Nations, so
