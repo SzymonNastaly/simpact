@@ -13,6 +13,10 @@ uv run python -m climate_sim --seed 42 --output runs/my-climate-run
 uv run python -m climate_sim.lab --run runs/my-climate-run --port 8766
 ```
 
+Between rounds, members also meet each other on their own under the same five-tick
+acknowledgement protocol; the lab lists those meetings per perspective (`--meeting-ticks 0`
+turns them off). Gemini members use `gemini-3.8-flash`.
+
 Open `http://127.0.0.1:8766/`. This is a local researcher replay and a manual meeting
 protocol sandbox, not a live multi-user summit. Set `GEMINI_API_KEY` locally and add
 `--backend gemini` to generate LLM agent runs. Offline policies and the mock climate

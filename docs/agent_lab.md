@@ -19,7 +19,8 @@ Open `http://127.0.0.1:8766/`. The lab binds to loopback only. Use an unused out
 directory when generating a run; existing archives are not overwritten.
 
 For Gemini, set `GEMINI_API_KEY` locally and use `--backend gemini` when generating
-the run. Per-member models can be supplied with `--agent-models file.json`.
+the run. Members use `gemini-3.8-flash`; per-member models can still be supplied with
+`--agent-models file.json`.
 The replay labels the actual backend; an offline-scripted run is never presented
 as an LLM run. The lab does not itself make paid LLM calls.
 
@@ -80,9 +81,8 @@ contain any combination of registered member roles and countries.
 The floor is a **manual protocol sandbox**, separate from the saved run. The
 researcher can act as different members to exercise request, acknowledgement,
 decline, message and timeout transitions. This is real protocol state, not an
-animation, but agents do not autonomously request or respond in this sandbox.
-Live Concordia scheduling and Gemini-driven meeting actions are a next integration
-step; the existing saved run still has a six-spokesperson formal summit.
+animation, but agents do not act in this sandbox: their own meetings happen during
+the run (see below).
 
 Choosing a member perspective and “Play this role” changes its sandbox controller
 to human and restricts actions to that member. The HTTP server also forces private
@@ -93,6 +93,30 @@ Each lab launch writes scoped meeting events and controller changes to a new
 `runs/meeting-lab-*/meetings.jsonl` archive. Archives contain private conversations,
 are intentionally Git-ignored, and should not be publicly pushed. The sandbox is
 not automatically restored after a server restart.
+
+## Agent meetings in a run
+
+Before each later round's team deliberation (World Climate's "team meetings and
+negotiations"), members meet each other under the same protocol, scheduled by
+Concordia's simultaneous engine with one scene per tick. Every member may act on the
+first tick. After that, only members with an invitation to answer or an active meeting
+act, and the phase ends when nobody has meeting business left, or after
+`--meeting-ticks` ticks (default 6; 0 turns meetings off). One clock runs across
+rounds, so meeting IDs and deadlines stay unique.
+
+Each member sees only its own meetings and the member directory. Its moves are checked
+against that view first, so a Gemini member gets the error back and repairs its answer.
+Moves that collide within a tick, such as a message to a meeting its sender has just
+closed, are refused, and the refusal is recorded for the mover only. Meeting records
+keep their exact participant scope, so what a member learns in a meeting can shape its
+team deliberation without reaching uninvited teammates. The offline policy is scripted:
+each climate adviser invites the next delegation's adviser, shares a position and closes,
+and one economic-minister request is never answered, so expiry is exercised.
+
+The lab lists a run's agent meetings for the selected round on the floor, filtered on
+the server: the researcher sees all of them, a member only its own, the public none.
+The manual sandbox still starts empty. `metrics.json` and the report count requests,
+outcomes, messages and cross-delegation meetings.
 
 ## Climate and sources
 

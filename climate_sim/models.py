@@ -190,11 +190,23 @@ class SimulationConfig(Model):
     negotiation_turns: int = Field(default=1, ge=1, le=10)
     offer_visibility: Literal["mixed", "public", "private"] = "mixed"
     memory_length: int = Field(default=100, ge=1, le=10000)
+    # Ticks of member-to-member meetings before each later round's team deliberation; 0 turns them off.
+    meeting_ticks: int = Field(default=6, ge=0, le=20)
     backend: Literal["offline", "gemini"] = "offline"
-    default_model: str = "gemini-flash-latest"
+    default_model: str = "gemini-3.8-flash"
     agent_models: dict[str, str] = Field(default_factory=dict)
     us_variant: Literal["national", "climate_alliance_proxy"] = "national"
     stop_on_target: bool = False
+
+
+class MeetingAction(Model):
+    """One step in the meeting protocol (see meetings.py), taken by the acting member."""
+    operation: Literal["request", "respond", "message", "close"]
+    invitees: list[str] = Field(default_factory=list, max_length=17)
+    topic: str = Field(default="", max_length=300)
+    meeting_id: str | None = None
+    accepted: bool | None = None
+    text: str = Field(default="", max_length=4000)
 
 
 class MemberAction(Model):
@@ -206,3 +218,4 @@ class MemberAction(Model):
     offer_responses: dict[str, Literal["accept", "reject"]] = Field(default_factory=dict)
     ranked_candidates: list[str] = Field(default_factory=list)
     approved_candidates: list[str] = Field(default_factory=list)
+    meeting_actions: list[MeetingAction] = Field(default_factory=list, max_length=4)
