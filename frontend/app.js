@@ -85,10 +85,24 @@ window.SimpactCasting = (() => {
     $('error').hidden = false;
   }
 
-  function renderCountries() {
+  function replaceContent(id, html) {
+    const element = $(id);
+    if (element.dataset.renderedHtml === html) return false;
+    const open = [...element.querySelectorAll('details[open][id]')].map(item => item.id);
     const focused = document.activeElement;
-    const focusCountry = focused?.dataset.country;
-    $('countries').innerHTML = session.countries.map(country => {
+    const focusKey = element.contains(focused) ? ['country','meeting','agent'].find(key => focused.dataset[key]) : null;
+    const focusValue = focusKey ? focused.dataset[focusKey] : null;
+    const top = window.scrollY, left = window.scrollX;
+    element.innerHTML = html;
+    element.dataset.renderedHtml = html;
+    for (const detailId of open) { const detail = document.getElementById(detailId); if (detail) detail.open = true; }
+    if (focusKey) element.querySelector(`[data-${focusKey}="${CSS.escape(focusValue)}"]`)?.focus({preventScroll:true});
+    if (window.scrollY !== top || window.scrollX !== left) window.scrollTo({top,left,behavior:'instant'});
+    return true;
+  }
+
+  function renderCountries() {
+    replaceContent('countries', session.countries.map(country => {
       const members = country.members;
       const dots = members.slice(0,6).map(agent => window.SimpactCasting?.avatar(agent,roleClass(agent),true) || `<span class="member-dot ${roleClass(agent)}" title="${esc(roleName(agent))}">${esc(initials(agent))}</span>`).join('');
       const flag = window.SimpactCasting?.flag(country.id) || 'none';
@@ -100,8 +114,7 @@ window.SimpactCasting = (() => {
         <span class="country-name">${esc(country.name)}</span><span class="country-meta">${members.length} ${members.length === 1 ? 'agent' : 'agents'}</span>
         <span class="member-dots" aria-hidden="true">${dots}${members.length > 6 ? `<span class="member-overflow">+${members.length - 6}</span>` : ''}</span></button>
         <div class="country-actions"><span class="country-status" role="status">${esc(status)}</span></div></article>`;
-    }).join('');
-    if (focusCountry) document.querySelector(`[data-country="${focusCountry}"]`)?.focus();
+    }).join(''));
     renderRoundControl();
     const total = session.countries.reduce((sum, country) => sum + country.members.length, 0);
     $('roster-total').textContent = `${session.countries.length} delegations · ${total} agents`;
@@ -155,7 +168,7 @@ window.SimpactCasting = (() => {
     $('country-view').hidden = false;
     const card = document.querySelector(`[data-country="${selectedCountry}"]`);
     selectedCountry = null;
-    if (card) card.focus();
+    if (card) card.focus({preventScroll:true});
     window.scrollTo({top:0});
   }
 
@@ -222,9 +235,11 @@ window.SimpactCasting = (() => {
       const signature = JSON.stringify(data.thinking_rounds || data.traces);
       if (refresh && $('agent-details').dataset.signature === signature) return;
       const expanded = refresh ? [...$('agent-details').querySelectorAll('details[open]')].map(item => item.id) : [];
+      const dialogScroll = $('agent-dialog').scrollTop;
       $('agent-details').dataset.signature = signature;
       $('agent-details').innerHTML = thinkingRounds(data);
       for (const traceId of expanded) { const detail = document.getElementById(traceId); if (detail) detail.open = true; }
+      if (refresh) $('agent-dialog').scrollTop = dialogScroll;
       if (!refresh && selectedTrace) document.getElementById(`decision-${selectedTrace}`)?.scrollIntoView?.({block:'nearest'});
     } catch (error) {
       if (request === agentRequest && selectedAgent === id) $('agent-details').innerHTML = empty(error.message);
@@ -282,9 +297,9 @@ window.SimpactCasting = (() => {
     if (!meetings.some(meeting => meeting.id === selectedMeeting)) selectedMeeting = meetings.find(m => m.status === 'active')?.id || meetings[0]?.id || null;
     const queue = bilaterals?.queue || [];
     const agentRow = item => `<article class="queue-agent">${person(item.agent)}<span class="chip">${esc(item.state)} · ${item.partners_met}/5 people</span>${item.waiting_seconds ? `<small>Waiting ${esc(item.waiting_seconds)}s / 10s</small>` : ''}${item.priorities?.length ? `<ol>${item.priorities.map(request => `<li>${esc(fullName(request.member))}<small>${esc(request.topic)}</small></li>`).join('')}</ol>` : ''}</article>`;
-    $('bilateral-slots').innerHTML = `<div class="agent-queues"><section><h2>Available agents</h2>${queue.filter(item => ['free','planning'].includes(item.state)).map(agentRow).join('') || empty('No agents waiting.')}</section><section><h2>Occupied agents</h2>${queue.filter(item => ['busy','updating'].includes(item.state)).map(agentRow).join('') || empty('No conversations in progress.')}</section></div>
-      ${queue.some(item => item.state === 'finished') ? `<details><summary>Finished agents</summary>${queue.filter(item => item.state === 'finished').map(agentRow).join('')}</details>` : ''}
-      <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`;
+    replaceContent('bilateral-slots', `<div class="agent-queues"><section><h2>Available agents</h2>${queue.filter(item => ['free','planning'].includes(item.state)).map(agentRow).join('') || empty('No agents waiting.')}</section><section><h2>Occupied agents</h2>${queue.filter(item => ['busy','updating'].includes(item.state)).map(agentRow).join('') || empty('No conversations in progress.')}</section></div>
+      ${queue.some(item => item.state === 'finished') ? `<details id="finished-agents"><summary>Finished agents</summary>${queue.filter(item => item.state === 'finished').map(agentRow).join('')}</details>` : ''}
+      <h2>Conversations</h2>${[...meetings].sort((a,b) => (b.status === 'active')-(a.status === 'active')).map(meeting => `<button type="button" class="meeting-card${meeting.id === selectedMeeting ? ' selected' : ''}" data-meeting="${esc(meeting.id)}" aria-pressed="${meeting.id === selectedMeeting}"><span class="meeting-people">${person(meeting.initiator)}<span class="meeting-link" aria-hidden="true">↔</span>${person(meeting.partner)}</span><span class="meeting-topic">${esc(meeting.topic)}</span><span class="meeting-meta"><span class="chip${meeting.status === 'active' ? ' live' : ''}">${esc(meetingState(meeting))}</span><span>${meeting.messages.length} messages</span></span></button>`).join('') || empty('Start Round 2. Agents will plan whom to meet and join conversations as partners become available.')}`);
     renderMeeting();
     renderNetwork();
     chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));
@@ -309,17 +324,15 @@ window.SimpactCasting = (() => {
 
   function renderMeeting() {
     const meeting = meetingsOf().find(item => item.id === selectedMeeting);
-    if (!meeting) { $('bilateral-conversation').innerHTML = ''; return; }
-    const open = [...$('bilateral-conversation').querySelectorAll('details[open]')].map(item => item.id);
+    if (!meeting) { replaceContent('bilateral-conversation', ''); return; }
     const side = id => id === meeting.initiator ? 'left' : 'right';
     const asked = meeting.mutual ? 'Both asked for this meeting.' : `${fullName(meeting.initiator)} asked for this meeting.`;
     const ended = meeting.status === 'active' ? '' : meeting.close_reason === 'limit' ? 'Ended at the message limit.' : `${fullName(meeting.closed_by)} ended the conversation.`;
-    $('bilateral-conversation').innerHTML = `<p class="eyebrow">ROUND 2 · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
+    replaceContent('bilateral-conversation', `<p class="eyebrow">ROUND 2 · PRIVATE</p><h2>${esc(meeting.topic)}</h2><p class="conversation-note">${esc(asked)} Only these two agents see this conversation.</p>
       <div class="meeting-agents">${[meeting.initiator,meeting.partner].map(id => { const agent = agentById(id); return `<button type="button" class="agent-button" data-agent="${esc(id)}">${agent ? avatar(agent) : ''}<span><strong>${esc(fullName(id))}</strong><small>All thinking traces</small></span><span class="small-arrow" aria-hidden="true">↗</span></button>`; }).join('')}</div>
       <div class="bilateral-messages">${meeting.messages.map(message => { const agent = agentById(message.actor); return `<article class="bubble ${side(message.actor)}">${agent ? avatar(agent) : ''}<div class="bubble-body"><button type="button" class="speaker" data-agent="${esc(message.actor)}"${message.trace_id ? ` data-trace="${esc(message.trace_id)}"` : ''}>${esc(fullName(message.actor))}</button><p class="message-text">${esc(message.text)}</p>${thinkingFor(message.id,message)}</div></article>`; }).join('') || empty('The opener is preparing the first message.')}</div>
       ${ended ? `<p class="conversation-note">${esc(ended)}</p>` : ''}
-      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><p>${esc(report.summary)}</p>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${thinkingFor(report.event_id,report)}</article>`).join('')}</div>` : ''}`;
-    for (const id of open) { const detail = document.getElementById(id); if (detail) detail.open = true; }
+      ${Object.keys(meeting.reports).length ? `<h3 class="reports-title">What each side told its own team</h3><div class="meeting-reports">${Object.entries(meeting.reports).map(([id,report]) => `<article class="round-summary"><h3><button type="button" class="speaker" data-agent="${esc(id)}"${report.trace_id ? ` data-trace="${esc(report.trace_id)}"` : ''}>${esc(fullName(id))}</button></h3><p>${esc(report.summary)}</p>${report.agreements.length ? `<h4>Understandings</h4><ul>${report.agreements.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${report.next_steps.length ? `<h4>Next steps</h4><ul>${report.next_steps.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}${thinkingFor(report.event_id,report)}</article>`).join('')}</div>` : ''}`);
   }
 
   async function controlBilaterals() {
@@ -340,7 +353,7 @@ window.SimpactCasting = (() => {
     selectedTrace = null;
     if ($('agent-dialog').open) $('agent-dialog').close();
     $('agent-details').innerHTML = '';
-    if (agentTrigger?.isConnected) agentTrigger.focus();
+    if (agentTrigger?.isConnected) agentTrigger.focus({preventScroll:true});
     agentTrigger = null;
   }
 
