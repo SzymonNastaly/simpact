@@ -15,6 +15,7 @@ uv run model_un.py                 # full session: 5 phases, 6 delegations
 uv run model_un.py --phases 2      # only opening statements and the caucus
 uv run model_un.py --scenario scenarios/my_topic.toml
 GEMINI_MODEL=gemini-3.8-flash uv run model_un.py   # default: gemini-flash-latest
+python check_scenario.py           # validate scenarios/*.toml before spending model calls
 ```
 
 The console shows speeches, private messages, notes, drafts and votes as they happen, then the vote results.
