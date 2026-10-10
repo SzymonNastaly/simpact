@@ -217,13 +217,16 @@ class Lab:
             elif event.kind == "bilateral_slot_summary":
                 slot_of(event.round, event.payload["slot"])["summary"] = {"text": event.payload["summary"],
                     "trace_id": traces.get(event.id), "thinking": thinking(event.id)}
+        relations = {e.round: e.payload for e in visible if e.kind == "bilateral_relations"}
         for meeting in fold_meetings(visible).values():
             for item in (*meeting["messages"], *meeting["reports"].values()):
                 item.update(trace_id=traces.get(item["event_id"]), thinking=thinking(item["event_id"]))
             slot_of(meeting["round"], meeting["slot"])["meetings"].append(meeting)
         return {"mode": "recorded", "run": self.run_name, "backend": self.state["config"]["backend"],
                 "participants": self.participant_directory(),
-                "rounds": [{"round": number, "slots": [slots[k] for k in sorted(slots)]} for number, slots in sorted(rounds.items())]}
+                "delegations": [{"id": k, "name": b.title} for k, b in self.briefs.items()],
+                "rounds": [{"round": number, "slots": [slots[k] for k in sorted(slots)], "relations": relations.get(number)}
+                           for number, slots in sorted(rounds.items())]}
 
     def trace(self, event_id: str, scope: str) -> dict:
         member = self.state["agents"].get(scope)

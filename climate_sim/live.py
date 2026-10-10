@@ -18,7 +18,7 @@ from typing import Callable
 from concordia.environment.step_controller import StepController
 
 from .agents import Backend, DelegationMember, GeminiBackend, OfflineBackend
-from .bilaterals import Bilaterals, SUMMARY_STAGE
+from .bilaterals import Bilaterals, RELATIONS_STAGE, SUMMARY_STAGE
 from .lab import Lab
 from .memory import Event
 from .models import ClimateCommitment, MemberAction, SimulationConfig
@@ -160,7 +160,8 @@ class LiveLab(Lab):
                          for region in self.sim.teams}
         # Bilaterals open once every delegation has concluded Round 1; they belong to Round 2.
         self.bilateral = {"active": False, "status": "idle", "thinking_agents": [], "error": None}
-        self.sim.rapporteur.thinking_level, self.sim.rapporteur.include_thoughts = thinking_level, True
+        for observer in (self.sim.rapporteur, *self.sim.analysts):
+            observer.thinking_level, observer.include_thoughts = thinking_level, True
         if config.bilateral_slots:
             self.sim.bilaterals = Bilaterals(self.sim.hub, self.sim.store, round_number=2,
                 slots=config.bilateral_slots, message_limit=config.bilateral_messages)
@@ -201,7 +202,7 @@ class LiveLab(Lab):
         for region, discussion in self.discussions.items():
             self._start_loop(region, discussion, self.sim.teams[region], self.controls[region], discussion.context)
         if self.sim.bilaterals:
-            self._start_loop("bilaterals", self.sim.bilaterals, [*self.sim.agents.values(), self.sim.rapporteur],
+            self._start_loop("bilaterals", self.sim.bilaterals, [*self.sim.agents.values(), self.sim.rapporteur, *self.sim.analysts],
                              self.bilateral, self._bilateral_context)
 
     def _start_loop(self, key: str, schedule, entities: list[DelegationMember], control: dict,
@@ -237,7 +238,7 @@ class LiveLab(Lab):
                         pass
                     elif schedule.done:
                         control.update(active=False, status="completed")
-                    elif schedule.slot != state["slot"]:
+                    elif schedule.slot != state["slot"] and not schedule.slots_done:
                         # Stop between slots so the conversations can be read before the next round of requests.
                         control.update(active=False, status="slot_done")
                     else:
@@ -268,7 +269,7 @@ class LiveLab(Lab):
 
     def _bilateral_context(self, member: DelegationMember, stage: str) -> dict:
         self.sim.current_round = 2
-        if stage == SUMMARY_STAGE:
+        if stage in (SUMMARY_STAGE, RELATIONS_STAGE):
             return self.sim.bilateral_context(member, stage)
         context = self.sim.context(member, stage)
         context["events"] = self.sim.store.view(member.name, member.brief.delegation.value, len(self.events) + 1,

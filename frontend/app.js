@@ -258,6 +258,7 @@
     }).join('')).join('') : empty(bilaterals?.live?.open ? 'Start the bilaterals. Agents first choose who they want to talk to.' : 'Bilaterals start after every delegation has concluded Round 1.');
     renderMeeting();
     renderNetwork();
+    chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));
   }
 
   function renderBilateralControls() {

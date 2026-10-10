@@ -721,11 +721,26 @@ RAPPORTEUR_SYSTEM = (
 )
 
 
-class Rapporteur(entity.Entity):
-    """A neutral observer of the bilaterals who summarizes each slot for the researcher. Agents never see it."""
+ANALYST_SYSTEM = (
+    "You are one of several independent analysts in a research simulation of a UN climate summit, writing for the "
+    "researcher only. You receive every private one-to-one bilateral between members of different delegations. For EACH "
+    "pair listed in pairs_to_rate, rate how cooperative or adversarial the relationship between the two delegations is, "
+    "judging ONLY from what their members actually said to each other: -1 openly adversarial (blame, refusals, "
+    "incompatible demands, threats), -0.5 guarded or competitive, 0 neutral or purely transactional, 0.5 constructive, "
+    "+1 well coordinated (shared goals, concrete joint steps, offers accepted). Use any value in between. Give a one-"
+    "sentence rationale citing what was said. Rate every listed pair exactly once and no others."
+)
 
-    def __init__(self, *, model: str | None = None, thinking_level: str | None = None, include_thoughts: bool = False):
-        self._name = "rapporteur"
+
+class Rapporteur(entity.Entity):
+    """A neutral observer of the bilaterals, for the researcher only; agents never see its work.
+
+    As the rapporteur it summarizes each slot (slot_summary); as one of several analysts it independently
+    rates how cooperative each pair of delegations was (relations), so the ratings can be averaged."""
+
+    def __init__(self, *, name: str = "rapporteur", model: str | None = None, thinking_level: str | None = None,
+                 include_thoughts: bool = False):
+        self._name = name
         self.model, self.thinking_level, self.include_thoughts = model, thinking_level, include_thoughts
         self.label = f"gemini:{model}" if model else "offline-scripted-v1"
         self.action_traces: list[dict] = []
@@ -749,7 +764,11 @@ class Rapporteur(entity.Entity):
     def act(self, action_spec: entity.ActionSpec = entity.DEFAULT_ACTION_SPEC) -> str:
         self.last_error = None
         try:
-            summary, generation = self._gemini(self._context) if self.model else (self._scripted(self._context), None)
+            if self._context["stage"] == "relations":
+                ratings, generation = self._gemini_relations(self._context) if self.model else (self._scripted_relations(self._context), None)
+                summary = json.dumps({"pairs": ratings}, ensure_ascii=False)
+            else:
+                summary, generation = self._gemini(self._context) if self.model else (self._scripted(self._context), None)
         except Exception as error:
             self.last_error = type(error).__name__
             raise RuntimeError(f"Rapporteur failed ({type(error).__name__})") from None
@@ -773,14 +792,51 @@ class Rapporteur(entity.Entity):
                          f"({len(meeting['messages'])} messages, {ended}).")
         return " ".join(lines)
 
+    def _scripted_relations(self, context: dict) -> list[dict]:
+        """Seeded per analyst: mutual meetings read as warmer, declined ones as colder."""
+        rng = random.Random(f"{self.name}:{context['round']}")
+        ratings = []
+        for a, b in context["pairs_to_rate"]:
+            met = [m for m in context["meetings"] if {m["delegations"][0], m["delegations"][1]} == {a, b}]
+            base = sum(.4 if m["mutual"] else (-.5 if len(m["messages"]) <= 1 else .1) for m in met) / max(len(met), 1)
+            ratings.append({"a": a, "b": b, "score": round(max(-1, min(1, base + rng.uniform(-.15, .15))), 2),
+                            "rationale": f"Scripted rating from {len(met)} conversation(s)."})
+        return ratings
+
+    def _gemini_relations(self, context: dict) -> tuple[list[dict], dict]:
+        schema = {"type": "object", "required": ["pairs"], "properties": {"pairs": {"type": "array", "items": {
+            "type": "object", "required": ["a", "b", "score", "rationale"],
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}, "score": {"type": "number"},
+                           "rationale": {"type": "string"}}}}}}
+        wanted = {frozenset(pair) for pair in context["pairs_to_rate"]}
+
+        def parse(output: str) -> list[dict]:
+            pairs = json.loads(output)["pairs"]
+            seen = [frozenset((p["a"], p["b"])) for p in pairs]
+            if len(seen) != len(set(seen)) or set(seen) != wanted:
+                raise ValueError(f"Rate exactly these pairs once each: {context['pairs_to_rate']}")
+            if any(not -1 <= float(p["score"]) <= 1 for p in pairs):
+                raise ValueError("Scores must lie in [-1, 1]")
+            return [{"a": p["a"], "b": p["b"], "score": float(p["score"]), "rationale": str(p["rationale"])[:400]} for p in pairs]
+        return self._call(ANALYST_SYSTEM, context, schema, parse, temperature=.7)
+
     def _gemini(self, context: dict) -> tuple[str, dict]:
+        schema = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}
+
+        def parse(output: str) -> str:
+            summary = json.loads(output)["summary"].strip()
+            if not summary:
+                raise ValueError("Empty summary")
+            return summary
+        return self._call(RAPPORTEUR_SYSTEM, context, schema, parse, temperature=.3)
+
+    def _call(self, system: str, context: dict, schema: dict, parse, *, temperature: float):
         from google.genai import types
         prompt = json.dumps(context, ensure_ascii=False)
         generation = {"model": self.model, "thinking_level": self.thinking_level,
-                      "thought_summaries_requested": self.include_thoughts, "system_instruction": RAPPORTEUR_SYSTEM, "calls": []}
-        schema = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}
+                      "thought_summaries_requested": self.include_thoughts, "system_instruction": system, "calls": []}
         for attempt in range(3):
-            config = types.GenerateContentConfig(system_instruction=RAPPORTEUR_SYSTEM, temperature=.3,
+            config = types.GenerateContentConfig(system_instruction=system, temperature=temperature,
                                                  response_mime_type="application/json", response_json_schema=schema)
             if self.thinking_level or self.include_thoughts:
                 config.thinking_config = types.ThinkingConfig(thinking_level=self.thinking_level.upper() if self.thinking_level else None,
@@ -799,11 +855,10 @@ class Rapporteur(entity.Entity):
             output = "".join(p.text for p in parts if not getattr(p, "thought", False) and getattr(p, "text", None)) or response.text or ""
             call["output"] = output
             try:
-                summary = json.loads(output)["summary"].strip()
-                if summary:
-                    call["accepted"] = True
-                    return summary, generation
-                raise ValueError("Empty summary")
+                result = parse(output)
+                call["accepted"] = True
+                return result, generation
             except (ValueError, KeyError, TypeError) as error:
                 call["validation_error"] = str(error)[:500]
-        raise ValueError("Rapporteur did not return a summary after three attempts")
+                prompt += "\nPrevious output failed validation. Repair it: " + str(error)[:500]
+        raise ValueError(f"{self.name} did not return a valid answer after three attempts")

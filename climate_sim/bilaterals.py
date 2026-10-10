@@ -11,6 +11,9 @@ A round of bilaterals has one or more slots. In each slot:
 5. slot_summary: once every conversation has ended and been reported, a neutral rapporteur
    summarizes the slot for the researcher. Agents never see it.
 
+After the last slot, several independent analysts each rate how cooperative every pair of delegations
+that talked has been (relations); the game master averages their ratings and keeps the spread.
+
 State is read from the event store and meeting registry rather than kept here, so a resumed live
 session continues where it stopped. Any subset of due actions can be resolved: the batch simulation
 resolves a whole step at once, the live viewer resolves each call as it returns.
@@ -18,12 +21,15 @@ resolves a whole step at once, the live viewer resolves each call as it returns.
 
 from __future__ import annotations
 
+import json
+
 from .meetings import Meeting, MeetingHub
 from .memory import EventStore
 from .models import MemberAction, PartnerRequest
 
 STAGES = ("nominate", "bilateral", "debrief")
 SUMMARY_STAGE, RAPPORTEUR = "slot_summary", "rapporteur"
+RELATIONS_STAGE, ANALYSTS = "relations", ("analyst-1", "analyst-2", "analyst-3")
 
 
 def pair_requests(nominations: dict[str, list[PartnerRequest]], delegation_of: dict[str, str],
@@ -83,8 +89,19 @@ class Bilaterals:
         return len(self._events("bilateral_slot_finished")) + 1
 
     @property
-    def done(self) -> bool:
+    def slots_done(self) -> bool:
         return self.slot > self.slots
+
+    @property
+    def done(self) -> bool:
+        return self.slots_done and (bool(self._events("bilateral_relations")) or not self._pairs_to_rate())
+
+    def _pairs_to_rate(self) -> list[list[str]]:
+        """Pairs of delegations whose members talked, in a fixed order; observer groups are not rated."""
+        delegation_of = {p.id: p.delegation for p in self.hub.participants.values() if p.role != "observer"}
+        pairs = {tuple(sorted((delegation_of[m.initiator], delegation_of[m.partner]))) for m in self._meetings()
+                 if m.initiator in delegation_of and m.partner in delegation_of and m.messages}
+        return [list(pair) for pair in sorted(pairs) if pair[0] != pair[1]]
 
     @property
     def paired(self) -> bool:
@@ -100,6 +117,9 @@ class Bilaterals:
         """(stage, member) for everyone who can act now."""
         if self.done:
             return []
+        if self.slots_done:
+            rated = {e.actor for e in self._events("bilateral_relation_rating")}
+            return [(RELATIONS_STAGE, name) for name in ANALYSTS if name not in rated]
         if not self.paired:
             nominated = self._nominations()
             return [("nominate", name) for name in self.hub.participants if name not in nominated]
@@ -115,6 +135,19 @@ class Bilaterals:
         return due
 
     def context(self, name: str, stage: str) -> dict:
+        if stage == RELATIONS_STAGE:
+            delegation_of = {p.id: p.delegation for p in self.hub.participants.values()}
+            pairs = self._pairs_to_rate()
+            wanted = {frozenset(pair) for pair in pairs}
+            reports = {}
+            for event in self._events("team_meeting_report"):
+                reports.setdefault(event.payload["meeting_id"], {})[event.actor] = event.payload["summary"]
+            return {"stage": stage, "round": self.round, "pairs_to_rate": pairs,
+                    "meetings": [{"delegations": [delegation_of[m.initiator], delegation_of[m.partner]],
+                                  "between": [m.initiator, m.partner], "topic": m.topic, "mutual": m.mutual,
+                                  "messages": [{"from": x["actor"], "text": x["text"]} for x in m.messages],
+                                  "reports_to_own_team": reports.get(m.id, {})}
+                                 for m in self._meetings() if frozenset((delegation_of[m.initiator], delegation_of[m.partner])) in wanted]}
         if stage == SUMMARY_STAGE:
             reports = {}
             for event in self._events("team_meeting_report", self.slot):
@@ -166,6 +199,10 @@ class Bilaterals:
                     self.hub.close(meeting.id, actor=name, reason="ended")
                 elif len(meeting.messages) >= self.message_limit:
                     self.hub.close(meeting.id, reason="limit")
+            elif stage == RELATIONS_STAGE:
+                ratings = json.loads(action.speech)["pairs"]
+                self.store.append("bilateral_relation_rating", {"pairs": ratings}, round=self.round,
+                                  visibility="individual", owners=["researcher"], actor=name)
             elif stage == SUMMARY_STAGE:
                 # Researcher-only: a neutral account of the whole slot, never fed back to agents.
                 self.store.append("bilateral_slot_summary", {"slot": self.slot, "summary": action.speech},
@@ -179,6 +216,21 @@ class Bilaterals:
         if stage == "nominate" and not self.due():
             self._pair()
         self._finish_slot()
+        if stage == RELATIONS_STAGE and self.slots_done and not self.due():
+            self._combine_ratings()
+
+    def _combine_ratings(self):
+        """Average the analysts' independent ratings per pair, keeping each rating and its reason."""
+        combined = {}
+        for event in self._events("bilateral_relation_rating"):
+            for rating in event.payload["pairs"]:
+                key = tuple(sorted((rating["a"], rating["b"])))
+                combined.setdefault(key, []).append({"analyst": event.actor, "score": rating["score"], "rationale": rating["rationale"]})
+        pairs = [{"a": a, "b": b, "score": round(sum(r["score"] for r in ratings) / len(ratings), 3),
+                  "low": min(r["score"] for r in ratings), "high": max(r["score"] for r in ratings), "ratings": ratings}
+                 for (a, b), ratings in sorted(combined.items())]
+        self.store.append("bilateral_relations", {"pairs": pairs, "analysts": len(ANALYSTS)}, round=self.round,
+                          visibility="individual", owners=["researcher"])
 
     def _pair(self):
         nominations = self._nominations()
