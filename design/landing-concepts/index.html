@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simpact Landing Concepts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Instrument+Serif&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#f6f4ee;--ink:#1d2420;--muted:#6b716c;--line:#dcdbd2;--card:#fffdf8}
+    @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121513;--ink:#ecebe5;--muted:#9aa09a;--line:#2b302c;--card:#1a1e1b}}
+    :root[data-theme="dark"]{--bg:#121513;--ink:#ecebe5;--muted:#9aa09a;--line:#2b302c;--card:#1a1e1b}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+    main{max-width:1180px;margin:0 auto;padding:56px 24px 80px}
+    .kicker{font-size:11px;letter-spacing:.2em;font-weight:600;color:var(--muted)}
+    h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:clamp(44px,7vw,84px);line-height:1;letter-spacing:-.02em;margin:14px 0 18px}
+    .lead{max-width:640px;color:var(--muted);line-height:1.6;font-size:17px;margin:0 0 28px}
+    .flags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:44px}
+    .flags img{width:36px;height:24px;border-radius:3px;object-fit:cover;box-shadow:0 0 0 1px var(--line)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px}
+    a.card{display:flex;flex-direction:column;gap:14px;padding:24px;border:1px solid var(--line);background:var(--card);border-radius:16px;color:inherit;text-decoration:none;transition:transform .2s,box-shadow .2s}
+    a.card:hover{transform:translateY(-4px);box-shadow:0 18px 40px -20px #0004}
+    .swatch{height:120px;border-radius:10px;display:flex;align-items:flex-end;padding:14px;font-weight:800;font-size:22px;letter-spacing:-.01em;color:#fff}
+    .card p{margin:0;color:var(--muted);line-height:1.5;font-size:14px}
+    .card b{font-size:12px;letter-spacing:.12em;color:var(--muted)}
+    .faces{display:flex}
+    .faces img{width:30px;height:30px;border-radius:50%;object-fit:cover;border:2px solid var(--card);margin-left:-8px}
+    .faces img:first-child{margin-left:0}
+    footer{margin-top:48px;font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+<main>
+  <div class="kicker">SIMPACT · DESIGN EXPLORATION</div>
+  <h1>Five ways to stage the summit</h1>
+  <p class="lead">Each concept is a landing page that shows how Round 1 (delegations debating internally) and Round 2 (one-to-one bilaterals) could be organised. Same flags, same cast, same mock data.</p>
+  <div class="flags" id="flags"></div>
+  <div class="grid" id="grid"></div>
+  <footer>Mock content: Round 1 lines partly from a recorded Gemini run, Round 2 lines are placeholders. Portraits from Wikimedia Commons, as in the current frontend.</footer>
+</main>
+<script src="cast.js"></script>
+<script src="data.js"></script>
+<script>
+  const concepts = [
+    ['1-assembly.html', 'The Assembly', 'Ceremonial and cinematic. A gold-lit UN hemicycle; Round 1 zooms into a delegation\'s seats, Round 2 draws arcs across the hall.', 'linear-gradient(135deg,#0b1430,#1c2b5a 60%,#b8913a)'],
+    ['2-situation-room.html', 'Situation Room', 'Mission-control HUD. Round 1 as eight parallel channels, Round 2 as a live Gantt of bilateral traffic.', 'linear-gradient(135deg,#050a0c,#0c2a30 60%,#19d3c5)'],
+    ['3-broadsheet.html', 'The Broadsheet', 'Prestige newspaper. Delegations are story columns, bilaterals a live blog with ink-stamp outcomes.', 'linear-gradient(135deg,#efe9dc,#d9cfbb 60%,#a3201c);color:#1d1d1b'],
+    ['4-matchday.html', 'Matchday', 'Sports broadcast. Team line-ups for Round 1, a fixtures board and standings for Round 2.', 'linear-gradient(120deg,#111 0 40%,#e63946 40% 60%,#1d3557 60%)'],
+    ['5-constellation.html', 'Constellation', 'Generative stage. 24 portraits cluster into delegations, then drift apart into bilateral pairs.', 'linear-gradient(135deg,#120c2e,#3b1f6b 55%,#ff8a4c)'],
+  ];
+  const esc = v => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  document.getElementById('flags').innerHTML = DATA.DELEGATIONS.map(d => `<img src="${SIM.flagSrc(d.id)}" alt="${esc(d.name)}" title="${esc(d.name)}">`).join('');
+  document.getElementById('grid').innerHTML = concepts.map(([href, name, blurb, bg], i) => `
+    <a class="card" href="${href}">
+      <div class="swatch" style="background:${bg}">${esc(name)}</div>
+      <b>CONCEPT ${i + 1}</b>
+      <p>${esc(blurb)}</p>
+      <div class="faces">${[0, 1, 2, 3, 4].map(j => `<img src="${DATA.photo(`${DATA.DELEGATIONS[(i + j) % 8].id}.${DATA.ROLE_KEYS[j % 3]}`)}" alt="">`).join('')}</div>
+    </a>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,1068 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simpact Situation Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#03070a; --bg2:#061016; --panel:rgba(8,17,23,.86); --panel2:rgba(11,24,32,.92);
+  --line:rgba(110,220,255,.11); --line2:rgba(110,220,255,.24); --grid:rgba(110,220,255,.045);
+  --cy:#2ee6ff; --cy2:#8ff3ff; --teal:#19d3b4; --amber:#ffb020; --red:#ff4f64;
+  --ok:#35f0b0; --offer:#ffb020; --stall:#ff4f64;
+  --tx:#d5eef3; --dim:#7b98a0; --dim2:#46616a;
+  --mono:'JetBrains Mono','IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:'Inter Tight','Helvetica Neue',Arial,sans-serif;
+  --H:27px; --lab:210px;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{overflow-x:clip}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--tx); font:13px/1.5 var(--mono);
+  background-image:
+    radial-gradient(1200px 600px at 70% -10%, rgba(46,230,255,.10), transparent 60%),
+    radial-gradient(900px 500px at 0% 40%, rgba(255,176,32,.05), transparent 60%),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:auto, auto, 48px 48px, 48px 48px;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{ /* noise */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:90; opacity:.07; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+body::after{ /* scanlines */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:91;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.022) 0 1px, transparent 1px 3px);
+}
+.scanband{position:fixed; left:0; right:0; top:-20vh; height:20vh; pointer-events:none; z-index:92;
+  background:linear-gradient(to bottom, transparent, rgba(46,230,255,.035), transparent);
+  animation:band 9s linear infinite}
+@keyframes band{to{transform:translateY(140vh)}}
+a{color:inherit}
+img{display:block}
+button{font:inherit; color:inherit}
+:focus-visible{outline:1px solid var(--cy); outline-offset:2px}
+.wrap{max-width:1380px; margin:0 auto; padding:0 24px}
+
+/* corner-bracket panel */
+.brk{
+  --bc:rgba(46,230,255,.75); --bl:10px;
+  border:1px solid var(--line);
+  background:
+    linear-gradient(var(--bc),var(--bc)) 0 0/var(--bl) 1px,
+    linear-gradient(var(--bc),var(--bc)) 0 0/1px var(--bl),
+    linear-gradient(var(--bc),var(--bc)) 100% 0/var(--bl) 1px,
+    linear-gradient(var(--bc),var(--bc)) 100% 0/1px var(--bl),
+    linear-gradient(var(--bc),var(--bc)) 0 100%/var(--bl) 1px,
+    linear-gradient(var(--bc),var(--bc)) 0 100%/1px var(--bl),
+    linear-gradient(var(--bc),var(--bc)) 100% 100%/var(--bl) 1px,
+    linear-gradient(var(--bc),var(--bc)) 100% 100%/1px var(--bl),
+    var(--panel);
+  background-repeat:no-repeat;
+}
+.lbl{font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim)}
+.lbl b{color:var(--cy); font-weight:500}
+
+/* ───── top bar ───── */
+.top{position:sticky; top:0; z-index:50; border-bottom:1px solid var(--line); background:rgba(3,7,10,.78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px)}
+.top .wrap{display:flex; align-items:center; gap:22px; height:46px; font-size:11px; letter-spacing:.14em; text-transform:uppercase}
+.logo{display:flex; align-items:center; gap:10px; font-family:var(--sans); font-weight:800; letter-spacing:.18em; font-size:13px; color:#fff; text-decoration:none}
+.logo i{width:18px; height:18px; border:1px solid var(--cy); position:relative; box-shadow:0 0 12px rgba(46,230,255,.5) inset}
+.logo i::after{content:""; position:absolute; inset:4px; background:var(--cy); animation:blink 2.4s steps(2) infinite}
+.top nav{display:flex; gap:18px; color:var(--dim)}
+.top nav a{text-decoration:none}
+.top nav a:hover{color:var(--cy)}
+.top .sp{flex:1}
+.rec{display:flex; align-items:center; gap:8px; color:var(--red)}
+.rec i{width:7px; height:7px; border-radius:50%; background:var(--red); box-shadow:0 0 10px var(--red); animation:blink 1.2s steps(2) infinite}
+#clock{color:var(--cy); font-variant-numeric:tabular-nums}
+@keyframes blink{50%{opacity:.2}}
+
+/* ───── hero ───── */
+.hero{padding:26px 0 0}
+.hero-grid{display:grid; grid-template-columns:minmax(330px,400px) 1fr; grid-template-areas:"copy map" "read map"; gap:16px}
+.copy{grid-area:copy; padding:22px 22px 20px}
+.eyebrow{display:flex; gap:10px; align-items:center; font-size:10.5px; letter-spacing:.2em; color:var(--cy); text-transform:uppercase}
+.eyebrow::before{content:""; width:22px; height:1px; background:var(--cy)}
+h1{font-family:var(--sans); font-weight:800; font-size:clamp(34px,3.3vw,48px); line-height:.98; letter-spacing:-.025em; margin:16px 0 14px; color:#fff}
+h1 em{font-style:normal; color:var(--cy); text-shadow:0 0 24px rgba(46,230,255,.45)}
+.copy p{color:var(--dim); margin:0 0 18px; font-size:12.5px}
+.copy p strong{color:var(--tx); font-weight:500}
+.ctas{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px}
+.btn{display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border:1px solid var(--cy); color:var(--cy); text-decoration:none; font-size:11px; letter-spacing:.14em; text-transform:uppercase; background:rgba(46,230,255,.06); transition:background .2s, color .2s}
+.btn:hover{background:var(--cy); color:#001318}
+.btn.ghost{border-color:var(--line2); color:var(--tx); background:transparent}
+.btn.ghost:hover{border-color:var(--amber); color:var(--amber); background:rgba(255,176,32,.06)}
+.stats{display:grid; grid-template-columns:repeat(5,1fr); border-top:1px solid var(--line); border-left:1px solid var(--line)}
+.stats div{border-right:1px solid var(--line); border-bottom:1px solid var(--line); padding:8px 8px 7px}
+.stats b{display:block; font-family:var(--sans); font-size:22px; font-weight:700; color:#fff; line-height:1; font-variant-numeric:tabular-nums}
+.stats span{font-size:8.5px; letter-spacing:.12em; color:var(--dim); text-transform:uppercase}
+
+.map-panel{grid-area:map; position:relative; min-height:500px; overflow:hidden}
+.map-panel canvas{position:absolute; inset:0; width:100%; height:100%}
+.nodes{position:absolute; inset:0}
+.hud-c{position:absolute; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); pointer-events:none; z-index:3}
+.hud-c.tl{top:12px; left:14px; color:var(--cy)} .hud-c.tr{top:12px; right:14px; text-align:right}
+.hud-c.bl{bottom:12px; left:14px} .hud-c.br{bottom:12px; right:14px; text-align:right}
+#mapLast b{font-weight:500}
+.node{position:absolute; width:0; height:0; border:0; padding:0; background:none; cursor:pointer; z-index:2}
+.node .dot{position:absolute; left:-4px; top:-4px; width:8px; height:8px; border-radius:50%; background:var(--cy); box-shadow:0 0 0 2px rgba(3,7,10,.9), 0 0 14px var(--cy)}
+.node .ping{position:absolute; left:-18px; top:-18px; width:36px; height:36px; border-radius:50%; border:1px solid var(--cy); opacity:0; animation:ping 2.8s cubic-bezier(.2,.6,.3,1) infinite; animation-delay:var(--pd,0s)}
+.node.hot .dot{background:#fff; box-shadow:0 0 0 2px rgba(3,7,10,.9), 0 0 22px var(--hc,var(--cy))}
+.node.hot .ping{border-color:var(--hc,var(--cy)); animation-duration:1s}
+@keyframes ping{0%{transform:scale(.25); opacity:.9} 100%{transform:scale(1.4); opacity:0}}
+.chip{position:absolute; display:flex; align-items:center; gap:5px; padding:2px 6px 2px 3px; white-space:nowrap; font-size:10px; font-weight:700; letter-spacing:.08em; background:rgba(3,10,14,.88); border:1px solid var(--line2); color:#fff; top:-10px; left:10px; transition:border-color .2s}
+.chip img{width:18px; height:12px; object-fit:cover; border-radius:1px}
+.chip::before{content:""; position:absolute; top:50%; width:6px; height:1px; background:var(--line2)}
+.node.r .chip{left:12px} .node.r .chip::before{left:-7px}
+.node.l .chip{left:auto; right:12px} .node.l .chip::before{right:-7px}
+.node.b .chip{left:-20px; top:12px} .node.b .chip::before{display:none}
+.node:hover .chip,.node:focus-visible .chip,.node.hot .chip{border-color:var(--cy)}
+.node:focus-visible{outline:none}
+
+.readouts{grid-area:read; display:grid; grid-template-columns:1fr 1fr; gap:16px}
+.ro{padding:14px 14px 12px; position:relative}
+.ro .lbl{display:flex; justify-content:space-between}
+.gauge svg{width:100%; height:auto; display:block; margin-top:6px}
+.g-val{display:flex; align-items:baseline; gap:4px; font-family:var(--sans); font-weight:800; font-size:40px; line-height:1; color:#fff; margin-top:-8px; font-variant-numeric:tabular-nums}
+.g-val small{font-size:15px; color:var(--dim); font-weight:500}
+.g-sub{font-size:10px; color:var(--dim); margin-top:6px}
+.g-sub b{color:var(--ok); font-weight:500}
+#gWob{animation:wob 3.2s ease-in-out infinite; transform-box:view-box; transform-origin:110px 112px}
+@keyframes wob{0%,100%{transform:rotate(-.7deg)} 50%{transform:rotate(.8deg)}}
+.fin-big{display:flex; flex-direction:column; gap:2px; margin:12px 0 12px}
+.fin-big div{display:flex; align-items:baseline; gap:8px}
+.fin-big b{font-family:var(--sans); font-weight:800; font-size:34px; line-height:1; font-variant-numeric:tabular-nums}
+.fin-big span{font-size:10px; color:var(--dim); letter-spacing:.1em; text-transform:uppercase}
+.c-cy{color:var(--cy)} .c-am{color:var(--amber)}
+.fbar{position:relative; height:16px; border:1px solid var(--line2); background:repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--line) calc(10% - 1px) 10%)}
+.fbar .gap{position:absolute; top:0; bottom:0; background:repeating-linear-gradient(-45deg, rgba(255,176,32,.55) 0 3px, transparent 3px 7px); border-right:2px solid var(--amber)}
+.fbar .fill{position:absolute; left:0; top:0; bottom:0; width:0; background:linear-gradient(90deg, rgba(46,230,255,.4), var(--cy)); box-shadow:0 0 14px rgba(46,230,255,.5); transition:width 1.8s cubic-bezier(.2,.8,.2,1) .4s}
+.fbar.on .fill{width:var(--w)}
+.fscale{display:flex; justify-content:space-between; font-size:9px; color:var(--dim2); margin-top:4px}
+.alert{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:10.5px; letter-spacing:.12em; color:var(--amber); text-transform:uppercase}
+.alert i{width:8px; height:8px; background:var(--amber); box-shadow:0 0 10px var(--amber); animation:blink 1s steps(2) infinite}
+
+.ticker{display:flex; margin-top:16px; border-top:1px solid var(--line2); border-bottom:1px solid var(--line2); background:rgba(3,10,14,.75); height:40px; overflow:hidden}
+.tk-lab{flex:none; display:flex; align-items:center; gap:8px; padding:0 14px; background:var(--amber); color:#140c00; font-size:10.5px; font-weight:700; letter-spacing:.16em}
+.tk-lab i{width:7px; height:7px; border-radius:50%; background:#140c00; animation:blink 1s steps(2) infinite}
+.tk-win{flex:1; overflow:hidden; position:relative; -webkit-mask-image:linear-gradient(90deg, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image:linear-gradient(90deg, transparent, #000 40px, #000 calc(100% - 40px), transparent)}
+.tk-track{display:flex; width:max-content; height:100%; align-items:center; animation:tick var(--dur,120s) linear infinite}
+.ticker:hover .tk-track{animation-play-state:paused}
+@keyframes tick{to{transform:translateX(-50%)}}
+.tk{display:flex; align-items:center; gap:8px; padding:0 26px 0 0; white-space:nowrap; font-size:12px; color:var(--tx)}
+.tk img{width:20px; height:13px; object-fit:cover}
+.tk b{color:var(--cy); font-weight:500; font-size:10.5px; letter-spacing:.1em}
+.tk b.bi{color:var(--amber)}
+.tk q{color:var(--tx)} .tk q::before{content:"“"} .tk q::after{content:"”"}
+.tk .who{color:var(--dim)}
+.tk::after{content:"◆"; color:var(--dim2); font-size:8px; margin-left:18px}
+
+.seq{display:grid; grid-template-columns:repeat(3,1fr); margin:22px 0 0; border:1px solid var(--line)}
+.seq a{display:flex; gap:14px; align-items:center; padding:14px 18px; text-decoration:none; border-right:1px solid var(--line); transition:background .2s}
+.seq a:last-child{border-right:0}
+.seq a:hover{background:rgba(46,230,255,.05)}
+.seq .n{font-family:var(--sans); font-weight:800; font-size:28px; color:var(--dim2)}
+.seq a:hover .n{color:var(--cy)}
+.seq strong{display:block; font-family:var(--sans); font-size:15px; color:#fff; font-weight:700}
+.seq span{font-size:11px; color:var(--dim)}
+
+/* ───── sections ───── */
+section.sec{padding:84px 0 20px}
+.sec-head{display:grid; grid-template-columns:1fr minmax(0,460px); gap:30px; align-items:end; margin-bottom:26px}
+.sec-head .tag{display:inline-flex; gap:10px; font-size:11px; letter-spacing:.2em; color:var(--amber); text-transform:uppercase}
+.sec-head .tag i{font-style:normal; color:var(--dim)}
+h2{font-family:var(--sans); font-weight:800; font-size:clamp(30px,4vw,56px); line-height:.96; letter-spacing:-.03em; margin:12px 0 0; color:#fff}
+h2 em{font-style:normal; color:var(--cy)}
+.sec-head p{margin:0; color:var(--dim); font-size:12.5px}
+.sec-head p strong{color:var(--tx); font-weight:500}
+
+/* ───── Round 1 desk ───── */
+.desk{display:grid; grid-template-columns:repeat(8,1fr); gap:8px; padding:12px; border:1px solid var(--line2); background:linear-gradient(180deg, rgba(11,24,32,.9), rgba(5,12,16,.95)); position:relative}
+.desk::before{content:"MIX · DELEGATION CHANNELS 01—08"; position:absolute; top:-9px; left:16px; padding:0 8px; background:var(--bg); font-size:10px; letter-spacing:.16em; color:var(--dim)}
+.strip{--acc:#2ee6ff; position:relative; display:flex; flex-direction:column; gap:9px; padding:10px 9px 10px; min-width:0; cursor:pointer;
+  border:1px solid var(--line); background:linear-gradient(180deg, rgba(255,255,255,.025), transparent 40%), rgba(3,9,12,.8); transition:border-color .2s, background .2s}
+.strip::before{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:var(--acc); opacity:.85}
+.strip:hover{border-color:var(--line2)}
+.strip[aria-pressed="true"]{border-color:var(--cy); background:linear-gradient(180deg, rgba(46,230,255,.09), transparent 50%), rgba(3,9,12,.85); box-shadow:0 0 0 1px rgba(46,230,255,.25), 0 10px 30px -12px rgba(46,230,255,.4)}
+.strip[aria-pressed="true"]::after{content:""; position:absolute; left:50%; bottom:-14px; width:1px; height:14px; background:var(--cy)}
+.s-top{display:flex; justify-content:space-between; align-items:center; font-size:9.5px; letter-spacing:.14em; color:var(--dim)}
+.led{width:7px; height:7px; border-radius:50%; background:var(--ok); box-shadow:0 0 8px var(--ok)}
+.led.amb{background:var(--amber); box-shadow:0 0 8px var(--amber)}
+.s-flag{position:relative; height:34px; overflow:hidden; border:1px solid var(--line)}
+.s-flag img{width:100%; height:100%; object-fit:cover; filter:saturate(.9) brightness(.85)}
+.s-flag b{position:absolute; right:4px; bottom:2px; font-family:var(--sans); font-weight:800; font-size:16px; color:#fff; text-shadow:0 1px 6px rgba(0,0,0,.9)}
+.s-name{font-size:10px; color:var(--tx); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:-3px}
+.s-av{display:grid; grid-template-columns:repeat(3,1fr); gap:4px}
+.av{margin:0; position:relative}
+.av img{width:100%; aspect-ratio:1; object-fit:cover; object-position:50% 20%; border:1px solid var(--line2); filter:grayscale(.55) contrast(1.05); transition:filter .25s, border-color .25s, box-shadow .25s}
+.av figcaption{font-size:7.5px; letter-spacing:.08em; color:var(--dim2); text-align:center; margin-top:2px}
+.av.tx img{filter:none; border-color:var(--cy); box-shadow:0 0 0 1px var(--cy), 0 0 12px rgba(46,230,255,.6)}
+.av.tx figcaption{color:var(--cy)}
+.wave{width:100%; height:38px; display:block; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:rgba(0,0,0,.25)}
+.s-tx{display:flex; justify-content:space-between; font-size:9px; letter-spacing:.1em; color:var(--dim); margin-top:-4px}
+.s-tx .st{color:var(--dim2)} .s-tx .st.on{color:var(--red)}
+.vu{width:100%; height:auto; display:block; background:radial-gradient(120% 100% at 50% 100%, rgba(255,220,150,.06), transparent 70%); border:1px solid var(--line)}
+.vu .needle{transform-box:view-box; transform-origin:60px 66px; transform:rotate(var(--a0)); transition:transform 2.2s cubic-bezier(.3,1.45,.45,1) var(--dl,0s)}
+.desk.armed .vu .needle{transform:rotate(var(--a1))}
+.s-rate{display:flex; align-items:baseline; justify-content:center; gap:5px; font-size:11px; color:var(--dim); margin-top:-4px}
+.s-rate b{font-family:var(--sans); font-size:20px; font-weight:800; color:var(--cy)}
+.s-rate small{font-size:8.5px}
+.s-meta{display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin:0; border:1px solid var(--line)}
+.s-meta div{padding:4px 3px; text-align:center; border-right:1px solid var(--line); min-width:0}
+.s-meta div:last-child{border-right:0}
+.s-meta dt{font-size:7.5px; letter-spacing:.12em; color:var(--dim2)}
+.s-meta dd{margin:0; font-size:11px; color:var(--tx); font-variant-numeric:tabular-nums}
+.s-meta dd.neg{color:var(--amber)} .s-meta dd.pos{color:var(--ok)}
+.s-open{font-size:9.5px; letter-spacing:.14em; color:var(--dim); text-align:center; padding-top:2px}
+.strip[aria-pressed="true"] .s-open{color:var(--cy)}
+
+.term{margin-top:14px; border:1px solid var(--cy); background:#020608; box-shadow:0 0 0 1px rgba(46,230,255,.12), 0 20px 60px -20px rgba(46,230,255,.25)}
+.term-bar{display:flex; align-items:center; gap:12px; padding:8px 12px; border-bottom:1px solid var(--line2); font-size:10.5px; letter-spacing:.1em; color:var(--dim); background:rgba(46,230,255,.05)}
+.term-bar .dots{display:flex; gap:5px} .term-bar .dots i{width:8px; height:8px; border-radius:50%; background:var(--dim2)}
+.term-bar .dots i:first-child{background:var(--red)}
+.term-bar img{width:22px; height:14px; object-fit:cover}
+.term-bar .path{color:var(--cy); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.term-bar .sp{flex:1}
+.term-bar .enc{color:var(--ok); white-space:nowrap}
+.term-body{padding:14px 16px 16px; min-height:260px; font-size:12.5px; line-height:1.65}
+.tl{display:grid; grid-template-columns:78px 78px 1fr; gap:10px; padding:2px 0}
+.tl[hidden]{display:none}
+.tl time{color:var(--dim2); font-variant-numeric:tabular-nums}
+.tl .rt{font-weight:700; letter-spacing:.06em}
+.tl .rt.head_negotiator{color:var(--cy)} .tl .rt.economic_minister{color:var(--amber)} .tl .rt.climate_adviser{color:var(--ok)}
+.tl .rt.sys{color:var(--dim)} .tl .rt.prop{color:#c79bff} .tl .rt.vote{color:var(--red)}
+.tl .who{color:var(--dim); margin-right:8px}
+.tl .who::after{content:" ›"}
+.tl .txt{color:var(--tx)}
+.tl.sys .txt{color:var(--dim)}
+.tl.fin .txt{color:#fff; font-weight:500}
+.cursor{display:inline-block; width:8px; height:14px; background:var(--cy); vertical-align:-2px; margin-left:2px; animation:blink 1s steps(2) infinite}
+
+/* ───── Round 2 ───── */
+.r2{display:grid; grid-template-columns:1fr 340px; gap:16px; align-items:start}
+.gantt-panel{padding:0; position:relative}
+.ctrl{display:flex; flex-wrap:wrap; align-items:center; gap:14px; padding:10px 14px; border-bottom:1px solid var(--line)}
+.play{display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid var(--cy); background:rgba(46,230,255,.06); color:var(--cy); font-size:10.5px; letter-spacing:.14em; cursor:pointer}
+.play:hover{background:var(--cy); color:#001318}
+#tNow{font-family:var(--sans); font-size:22px; font-weight:800; color:#fff; font-variant-numeric:tabular-nums; min-width:96px}
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:10px; letter-spacing:.1em; color:var(--dim); text-transform:uppercase}
+.legend span{display:flex; align-items:center; gap:6px}
+.legend i{width:14px; height:8px}
+.legend b{color:var(--tx); font-weight:500; font-variant-numeric:tabular-nums}
+.ctrl .sp{flex:1}
+.live-n{font-size:10px; letter-spacing:.12em; color:var(--dim); text-transform:uppercase}
+.live-n b{color:var(--cy); font-weight:500}
+.g-axis{display:flex; border-bottom:1px solid var(--line2)}
+.g-axis .al{width:var(--lab); flex:none; padding:6px 12px; font-size:9px; letter-spacing:.14em; color:var(--dim2); border-right:1px solid var(--line)}
+.g-axis .at{flex:1; position:relative; height:28px; cursor:crosshair}
+.g-axis .at span{position:absolute; top:7px; transform:translateX(-50%); font-size:9.5px; color:var(--dim); font-variant-numeric:tabular-nums}
+.g-axis .at span:first-child{transform:none} .g-axis .at span:last-child{transform:translateX(-100%)}
+.g-body{display:flex; position:relative}
+.g-labels{width:var(--lab); flex:none; border-right:1px solid var(--line)}
+.lane-lab{height:var(--H); display:flex; align-items:center; gap:7px; padding:0 10px; border-bottom:1px solid rgba(110,220,255,.05); min-width:0}
+.lane-lab.g0{border-top:1px solid var(--line2)}
+.lane-lab .lp{width:20px; height:20px; object-fit:cover; object-position:50% 20%; border:1px solid var(--line2); flex:none}
+.lane-lab .lf{width:17px; height:11px; object-fit:cover; flex:none}
+.lane-lab .ln{font-size:11px; color:var(--tx); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0}
+.lane-lab .lr{font-size:8.5px; letter-spacing:.1em; color:var(--dim2); flex:none}
+.lane-lab .lc{font-size:9px; color:var(--dim); flex:none; width:16px; text-align:right}
+.lane-lab.idle .ln{color:var(--dim2)}
+.lane-lab.hl{background:rgba(46,230,255,.08)} .lane-lab.hl .ln{color:#fff}
+.g-track{flex:1; position:relative; min-width:0; cursor:crosshair;
+  background-image:linear-gradient(90deg, rgba(110,220,255,.07) 1px, transparent 1px); background-size:calc(100% / 16) 100%}
+.lane-bg{height:var(--H); border-bottom:1px solid rgba(110,220,255,.05)}
+.lane-bg.g0{border-top:1px solid var(--line2)}
+.lane-bg:nth-child(odd){background:rgba(255,255,255,.012)}
+.bar{--oc:var(--ok); position:absolute; height:calc(var(--H) - 8px); padding:0 7px; border:1px solid var(--oc); background:color-mix(in srgb, var(--oc) 22%, transparent); color:#fff; font-size:10px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; z-index:2; transition:opacity .3s, background .3s, box-shadow .3s}
+.bar span{pointer-events:none}
+.o-agreed{--oc:var(--ok)} .o-offer{--oc:var(--offer)} .o-stalled{--oc:var(--stall)}
+.bar.pend{opacity:.22; background:transparent; border-style:dashed}
+.bar.live{background:color-mix(in srgb, var(--oc) 45%, transparent); box-shadow:0 0 14px color-mix(in srgb, var(--oc) 70%, transparent); animation:livebar 1s ease-in-out infinite alternate}
+@keyframes livebar{to{box-shadow:0 0 4px color-mix(in srgb, var(--oc) 40%, transparent)}}
+.bar.hl,.bar:focus-visible{background:var(--oc); color:#02090c; opacity:1; z-index:4}
+.link{--oc:var(--ok); position:absolute; width:0; border-left:1px dashed var(--oc); z-index:1; opacity:.55; pointer-events:none; transition:opacity .3s}
+.link::before,.link::after{content:""; position:absolute; left:-3.5px; width:6px; height:6px; border-radius:50%; background:var(--oc)}
+.link::before{top:-3px} .link::after{bottom:-3px}
+.link.pend{opacity:.12} .link.live{opacity:1; border-left-style:solid} .link.hl{opacity:1; border-left:2px solid var(--oc)}
+.g-head{position:absolute; top:-28px; bottom:0; width:0; border-left:1px solid var(--amber); z-index:5; pointer-events:none; box-shadow:0 0 10px var(--amber)}
+.g-head span{position:absolute; top:0; left:0; transform:translateX(-50%); background:var(--amber); color:#140c00; font-size:9.5px; font-weight:700; padding:2px 5px; white-space:nowrap}
+.g-head::after{content:""; position:absolute; top:-28px; bottom:0; left:-40px; width:40px; background:linear-gradient(90deg, transparent, rgba(255,176,32,.08))}
+
+.feed-panel{display:flex; flex-direction:column; max-height:calc(var(--H) * 24 + 110px)}
+.feed-head{display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line)}
+.feed{list-style:none; margin:0; padding:6px 0; overflow:auto; flex:1; min-height:220px; scrollbar-width:thin; scrollbar-color:var(--dim2) transparent}
+.feed li{animation:fin .4s ease-out}
+@keyframes fin{from{opacity:0; transform:translateY(-6px); background:rgba(46,230,255,.12)}}
+.feed button{display:grid; grid-template-columns:62px 1fr; gap:8px; width:100%; text-align:left; padding:7px 14px; border:0; border-bottom:1px solid rgba(110,220,255,.06); background:none; cursor:pointer; font-size:11px}
+.feed button:hover{background:rgba(46,230,255,.06)}
+.feed time{color:var(--dim2); font-variant-numeric:tabular-nums}
+.feed .ev{font-weight:700; letter-spacing:.08em; margin-right:6px}
+.feed .ev.open{color:var(--cy)} .feed .ev.agreed{color:var(--ok)} .feed .ev.offer{color:var(--offer)} .feed .ev.stalled{color:var(--stall)}
+.feed .pr{color:var(--tx)}
+.feed em{display:block; font-style:normal; color:var(--dim)}
+.feed-empty{padding:14px; color:var(--dim2); font-size:11px}
+
+/* intercept drawer */
+.scrim{position:fixed; inset:0; z-index:60; background:rgba(0,4,6,.62); backdrop-filter:blur(2px); opacity:0; pointer-events:none; transition:opacity .25s}
+.scrim.on{opacity:1; pointer-events:auto}
+.icpt{position:fixed; z-index:61; top:0; right:0; bottom:0; width:min(480px,100%); background:#030a0d; border-left:1px solid var(--amber); transform:translateX(102%); transition:transform .35s cubic-bezier(.2,.8,.2,1); display:flex; flex-direction:column; box-shadow:-30px 0 80px -30px rgba(255,176,32,.35)}
+.icpt.on{transform:none}
+.icpt-bar{display:flex; align-items:center; gap:10px; padding:12px 16px; background:repeating-linear-gradient(-45deg, rgba(255,176,32,.16) 0 8px, rgba(255,176,32,.06) 8px 16px); border-bottom:1px solid var(--amber); font-size:10.5px; letter-spacing:.14em; color:var(--amber); text-transform:uppercase}
+.icpt-bar .sp{flex:1}
+.icpt-bar button{border:1px solid var(--amber); background:none; color:var(--amber); padding:4px 9px; font-size:10px; letter-spacing:.12em; cursor:pointer}
+.icpt-bar button:hover{background:var(--amber); color:#140c00}
+.icpt-body{padding:18px 18px 28px; overflow:auto; flex:1}
+.icpt-meta{display:flex; flex-wrap:wrap; gap:6px 16px; font-size:10px; letter-spacing:.12em; color:var(--dim); text-transform:uppercase; margin-bottom:16px}
+.icpt-meta b{color:var(--tx); font-weight:500}
+.icpt h3{font-family:var(--sans); font-size:26px; font-weight:800; line-height:1.05; margin:0 0 18px; color:#fff; letter-spacing:-.02em}
+.parties{display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:center; margin-bottom:18px}
+.party{display:flex; gap:10px; align-items:center; min-width:0}
+.party.b{flex-direction:row-reverse; text-align:right}
+.party .pp{width:52px; height:65px; object-fit:cover; object-position:50% 20%; border:1px solid var(--line2); flex:none}
+.party.a .pp{border-color:var(--cy)} .party.b .pp{border-color:var(--amber)}
+.party .pn{font-size:11.5px; color:#fff; line-height:1.25}
+.party .pr2{display:flex; gap:5px; align-items:center; font-size:9px; letter-spacing:.1em; color:var(--dim); margin-top:4px}
+.party.b .pr2{justify-content:flex-end}
+.party .pr2 img{width:16px; height:10px; object-fit:cover}
+.parties .x{font-size:16px; color:var(--dim)}
+.wire{border-top:1px dashed var(--line2); padding-top:14px}
+.wl{display:grid; grid-template-columns:auto 1fr; gap:10px; padding:6px 0; font-size:12.5px; line-height:1.55}
+.wl .wt{font-size:10px; font-weight:700; letter-spacing:.08em; padding-top:2px}
+.wl.a .wt{color:var(--cy)} .wl.b .wt{color:var(--amber)}
+.wl .wx{color:var(--tx); word-break:break-word}
+.stamp{display:inline-block; margin-top:22px; padding:8px 16px; border:2px solid var(--oc); color:var(--oc); font-family:var(--sans); font-weight:800; font-size:20px; letter-spacing:.12em; text-transform:uppercase; transform:rotate(-4deg); opacity:0; transition:opacity .3s, transform .3s}
+.stamp.on{opacity:1; transform:rotate(-4deg) scale(1)}
+.icpt-foot{font-size:9.5px; letter-spacing:.12em; color:var(--dim2); margin-top:20px; text-transform:uppercase}
+
+/* footer */
+footer{margin-top:90px; border-top:1px solid var(--line2); padding:26px 0 40px; font-size:10.5px; color:var(--dim)}
+.f-top{display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px}
+.f-top a{color:var(--cy); text-decoration:none}
+.f-top a:hover{text-decoration:underline}
+.credits{columns:3 260px; column-gap:28px; color:var(--dim2); line-height:1.7}
+.credits div{break-inside:avoid}
+.credits a{color:var(--dim); text-decoration:none}
+.credits a:hover{color:var(--cy)}
+
+/* ───── responsive ───── */
+@media (max-width:1180px){
+  .desk{grid-template-columns:repeat(4,1fr)}
+  .r2{grid-template-columns:1fr}
+  .feed-panel{max-height:360px}
+}
+@media (max-width:960px){
+  .hero-grid{grid-template-columns:1fr; grid-template-areas:"copy" "map" "read"}
+  .map-panel{min-height:0; aspect-ratio:1.9}
+  .top nav{display:none}
+  .sec-head{grid-template-columns:1fr}
+  .seq{grid-template-columns:1fr} .seq a{border-right:0; border-bottom:1px solid var(--line)} .seq a:last-child{border-bottom:0}
+}
+@media (max-width:640px){
+  :root{--H:23px; --lab:62px}
+  .wrap{padding:0 16px}
+  .top .wrap{gap:12px}
+  .top .sess{display:none}
+  .copy{padding:18px 16px}
+  .stats b{font-size:18px}
+  .stats div{padding:7px 5px}
+  .stats span{font-size:7.5px; letter-spacing:.06em}
+  .map-panel{aspect-ratio:1.45}
+  .hud-c.tr,.hud-c.br{display:none}
+  .readouts{grid-template-columns:1fr}
+  .desk{gap:6px; padding:10px 8px}
+  .desk::before{content:"MIX · CH 01—08"}
+  .strip{padding:8px 5px; gap:7px}
+  .s-name,.av figcaption{display:none}
+  .s-av{gap:2px}
+  .s-flag{height:24px} .s-flag b{font-size:12px}
+  .wave{height:26px}
+  .s-tx{font-size:7.5px; letter-spacing:.04em}
+  .s-rate{font-size:9px} .s-rate b{font-size:15px} .s-rate small{display:none}
+  .s-meta{grid-template-columns:1fr} .s-meta div{border-right:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; padding:2px 4px}
+  .s-meta div:last-child{border-bottom:0}
+  .s-meta dd{font-size:9.5px}
+  .s-open{font-size:8px; letter-spacing:.06em}
+  .tl{grid-template-columns:1fr; gap:0; padding:5px 0; border-bottom:1px solid rgba(110,220,255,.05)}
+  .tl time{font-size:10px}
+  .term-body{padding:10px 12px; font-size:12px}
+  .term-bar .enc{display:none}
+  .lane-lab{padding:0 6px; gap:4px}
+  .lane-lab .ln,.lane-lab .lr,.lane-lab .lc{display:none}
+  .lane-lab .lp{width:17px; height:17px}
+  .g-axis .al{padding:6px 4px; font-size:7.5px}
+  .g-axis .at span.odd{display:none}
+  .bar{padding:0 3px; font-size:0}
+  .ctrl{gap:10px}
+  .legend{gap:10px; font-size:9px}
+  .parties .party .pn{font-size:10.5px}
+  .party .pp{width:42px; height:52px}
+  .icpt h3{font-size:22px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important; transition:none!important}
+  .scanband{display:none}
+  .tk-win{overflow-x:auto}
+  .node .ping{opacity:.35; transform:scale(.7)}
+}
+</style>
+</head>
+<body>
+<div class="scanband" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#top"><i></i>SIMPACT</a>
+    <nav aria-label="Sections"><a href="#r1">R1 · Channels</a><a href="#r2">R2 · Traffic</a><a href="#readout">Readout</a></nav>
+    <span class="sp"></span>
+    <span class="sess lbl">Session <b>COP-SIM/8×3</b></span>
+    <span class="rec"><i></i>LIVE</span>
+    <span id="clock">UTC --:--:--</span>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="copy brk">
+        <div class="eyebrow">Situation room · climate summit sim</div>
+        <h1>24 AI delegates. One planet. <em>Every channel open.</em></h1>
+        <p>Simpact casts <strong>AI agents as real heads of government, ministers and advisers</strong>, seats them in eight delegations and lets them argue, vote and cut deals — while you monitor every line of traffic.</p>
+        <div class="ctas">
+          <a class="btn" href="#r1">▶ Monitor Round 1</a>
+          <a class="btn ghost" href="#r2">Bilateral traffic ⇄</a>
+        </div>
+        <div class="stats" id="stats"></div>
+      </div>
+
+      <div class="map-panel brk" id="mapPanel">
+        <canvas id="map" aria-hidden="true"></canvas>
+        <div class="nodes" id="nodes"></div>
+        <div class="hud-c tl">◉ Global traffic monitor</div>
+        <div class="hud-c tr">Grid 2°·EQR<br>8 nodes / 24 agents</div>
+        <div class="hud-c bl" id="mapLast">Awaiting link…</div>
+        <div class="hud-c br">Click a node → open channel</div>
+      </div>
+
+      <div class="readouts" id="readout">
+        <div class="ro gauge brk">
+          <div class="lbl"><span>Warming <b>2100</b></span><span>°C</span></div>
+          <svg id="gauge" viewBox="0 0 220 124" role="img" aria-label="Projected warming falls from 2.15 to 2.10 degrees Celsius"></svg>
+          <div class="g-val"><span id="wVal">2.15</span><small>°C</small></div>
+          <div class="g-sub">from 2.15 baseline · <b id="wDelta">Δ 0.00</b></div>
+        </div>
+        <div class="ro fin brk" style="--bc:rgba(255,176,32,.8)">
+          <div class="lbl"><span>Climate <b style="color:var(--amber)">finance</b></span><span>$bn/yr</span></div>
+          <div class="fin-big">
+            <div><b class="c-cy" id="fPl">202</b><span>pledged</span></div>
+            <div><b class="c-am" id="fRq">375</b><span>requested</span></div>
+          </div>
+          <div class="fbar" id="fbar"><div class="gap" id="fGap"></div><div class="fill" id="fFill"></div></div>
+          <div class="fscale"><span>0</span><span>100</span><span>200</span><span>300</span><span>400</span></div>
+          <div class="alert"><i></i><span id="fAlert">Gap 173</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ticker" aria-label="Live speech ticker">
+      <div class="tk-lab"><i></i>INTERCEPTS</div>
+      <div class="tk-win"><div class="tk-track" id="ticker"></div></div>
+    </div>
+
+    <div class="seq">
+      <a href="#r1"><span class="n">01</span><span><strong>Round 1 · 8 channels</strong><span>Each delegation debates in private and locks a mandate.</span></span></a>
+      <a href="#r2"><span class="n">02</span><span><strong>Round 2 · Bilateral traffic</strong><span>Agents pair across delegations — no slots, no rounds.</span></span></a>
+      <a href="#readout"><span class="n">03</span><span><strong>Readout</strong><span>Warming and finance, recomputed from what was agreed.</span></span></a>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="r1">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <span class="tag">Round 1 <i>// delegation discussion</i></span>
+        <h2>8 channels.<br><em>3 voices</em> each.</h2>
+      </div>
+      <p>Every delegation is a closed channel: a <strong>head negotiator</strong>, an <strong>economic minister</strong> and a <strong>climate adviser</strong> argue, propose a mandate and vote. The needle shows each mandate moving from its opening rate to the agreed annual reduction. <strong>Click a channel</strong> to tap its log.</p>
+    </div>
+    <div class="desk" id="desk"></div>
+    <div class="term" id="term" aria-live="polite">
+      <div class="term-bar">
+        <span class="dots"><i></i><i></i><i></i></span>
+        <img id="termFlag" src="" alt="">
+        <span class="path" id="termPath">ch01://usa</span>
+        <span class="sp"></span>
+        <span class="enc">● REC · E2E OK</span>
+      </div>
+      <div class="term-body" id="termBody"></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="r2">
+  <div class="wrap">
+    <div class="sec-head">
+      <div>
+        <span class="tag">Round 2 <i>// bilaterals</i></span>
+        <h2>Bilateral traffic.<br><em>No slots.</em> No rounds.</h2>
+      </div>
+      <p>Agents rank who they want to meet across delegations. The moment an agent is free it is paired again — up to five meetings each. Every link ends in an <strong>agreement</strong>, an <strong>offer on the table</strong> or a <strong>stall</strong>. <strong>Click a bar</strong> to read the intercept.</p>
+    </div>
+    <div class="r2">
+      <div class="gantt-panel brk">
+        <div class="ctrl">
+          <button class="play" id="play" type="button">❚❚ PAUSE</button>
+          <span id="tNow">T+00:00</span>
+          <span class="live-n">Open links <b id="liveN">0</b></span>
+          <span class="sp"></span>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="g-axis"><div class="al">AGENT · T+MIN</div><div class="at" id="gAxis"></div></div>
+        <div class="g-body">
+          <div class="g-labels" id="gLabels"></div>
+          <div class="g-track" id="gTrack"></div>
+        </div>
+      </div>
+      <div class="feed-panel brk" style="--bc:rgba(255,176,32,.8)">
+        <div class="feed-head"><span class="lbl">Live feed · <b style="color:var(--amber)">link log</b></span><span class="lbl" id="feedN">0 events</span></div>
+        <ol class="feed" id="feed"></ol>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="icpt" id="icpt" role="dialog" aria-modal="true" aria-labelledby="icptTitle" aria-hidden="true">
+  <div class="icpt-bar"><span>◉ Intercept</span><span id="icptId">0x0000</span><span class="sp"></span><button type="button" id="icptClose">Close ✕</button></div>
+  <div class="icpt-body" id="icptBody"></div>
+</aside>
+
+<footer>
+  <div class="wrap">
+    <div class="f-top">
+      <span>SIMPACT · Situation Room · mock data for layout — Round 2 lines are illustrative</span>
+      <span>Concept 2 of 5 · <a href="index.html">← all concepts</a></span>
+    </div>
+    <div class="lbl" style="margin-bottom:8px">Photo credits · Wikimedia Commons</div>
+    <div class="credits" id="credits"></div>
+  </div>
+</footer>
+
+<script src="cast.js"></script>
+<script src="data.js"></script>
+<script>
+'use strict';
+(() => {
+const S = window.SIM, D = window.DATA;
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const OUTC = {agreed: '#35f0b0', offer: '#ffb020', stalled: '#ff4f64'};
+const SHORTN = {'Luiz Inácio Lula da Silva': 'Lula', 'Ursula von der Leyen': 'von der Leyen', 'Mohammed bin Salman': 'MBS',
+  'Abdulaziz bin Salman Al Saud': 'Abdulaziz', 'Mohammed Al-Jadaan': 'Al-Jadaan', 'Xi Jinping': 'Xi', 'Li Qiang': 'Li Qiang', 'Xie Zhenhua': 'Xie'};
+const shortName = n => SHORTN[n] || n.split(' ').slice(-1)[0];
+const agentTag = id => { const a = D.agent(id); return `${D.BY_ID[a.delegation].code}·${D.ROLE_SHORT[a.role]}`; };
+const fmtT = m => `T+${pad(Math.floor(m))}:${pad(Math.floor((m % 1) * 60 + 1e-6))}`;
+const fmtHMS = s => `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(Math.floor(s) % 60)}`;
+const fundStr = f => f > 0 ? `+${f}` : f < 0 ? `−${Math.abs(f)}` : '0';
+const G = D.GLOBAL;
+
+/* clock */
+const clock = $('#clock');
+const tickClock = () => { const d = new Date(); clock.textContent = `UTC ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`; };
+tickClock(); setInterval(tickClock, 1000);
+
+/* stats */
+$('#stats').innerHTML = [[D.DELEGATIONS.length, 'Delegations'], [D.AGENTS.length, 'Agents'], [G.bilaterals, 'Bilaterals'], [G.messages, 'Messages'], [G.agreements, 'Agreements']]
+  .map(([n, l]) => `<div><b>${esc(n)}</b><span>${esc(l)}</span></div>`).join('');
+
+/* ───────── world map ───────── */
+// Coarse land mask: polygons of lon,lat pairs, separated by "|".
+const LAND = `-9.5,37 -9,43 -1.5,43.5 -4.5,48 -1,49.5 2,51 4.5,52.5 8,53.5 8.5,57 10.5,57.5 12,56 11,59 5,59 5,62 10,64 14,68 19,70 25,71 31,70 41,67 44,68 54,68.5 60,69 69,73 80,73 87,75 100,78 113,74 130,71 141,72.5 160,70 172,70 180,69 180,65 177,62 170,60 163,59 160,54 156,51 156,57 162,62 150,59.5 142,59 136,54 141,52 140,48 133,43 130,42.5 129,39 129,35 126,34.5 126,37 125,39.5 121.5,40 119,39 118,38 120,37 122,37 121,32 122,30 120,26 117,23.5 113,22 110,21 108,21.5 106,19 109,15 109,12 107,10.5 105,8.7 104.5,10.5 101,12.5 100,13.5 99.5,10 100.5,7 103,4 103.5,1.5 101,3 98.5,8 98,11 98.5,15 97.5,16.5 94.5,16 94,19 92,21 90,22 87,21 86,20 84,18 80,15.5 80,13 79.5,10 77.5,8 76.5,9.5 74.5,14 73,18 72.5,21 70,22.5 68,23.5 66.5,25.5 61.5,25 57.5,25.7 56.3,26.5 56,24 58.7,22.5 59.8,22 57,18.8 55,17 52,16 48,14 43.5,12.7 42.7,15.5 41,19 39,21.5 37,25 35,28 34.5,28 32.5,30 34.2,31.3 35,33 35.8,35 36,36.6 32.5,36.1 30,36.3 27.3,37 26.5,39 26,40.5 23,40.5 24,38 22,36.5 21,38.5 19.5,40.5 19.5,42 15.5,44.5 13.7,45.7 12.3,45.3 12.5,44 14,42 16,41.5 18.5,40.2 16.5,39 15.7,38 16,40 15.5,40 14,41 12,41.9 10.5,43 8.8,44.4 6.5,43.1 4,43.5 3,42 3.2,41.8 0.5,40.5 -0.3,39.5 0,38.7 -0.7,37.6 -2.1,36.7 -4.4,36.7 -5.6,36
+|-5.9,35.8 -9.8,31 -10,29 -13,27.5 -17,21 -17,14.7 -16.7,12.5 -15,11 -13.2,8.9 -11.5,6.8 -7.5,4.4 -4,5.2 -1,5 1.5,6 4.5,6.3 6,4.3 8.5,4.5 9.7,3 9.8,1 9,-1 11.8,-3.5 12,-5 13.2,-8.5 13.5,-11.5 12,-14.5 11.8,-17.2 14.4,-22.5 15.2,-27 16.5,-28.6 18.4,-32 18.5,-34.2 20,-34.8 22.5,-34 26,-33.7 28,-32.6 30.5,-30.5 32.4,-28.6 32.6,-26 35.5,-24 35.5,-21.5 34.7,-19.8 36.5,-18.5 40.2,-15.5 40.5,-11 39.3,-8 39,-6 40.2,-2.7 41.6,-1.6 43.5,0.5 46,2.2 48.8,5.5 51,10.5 51.2,11.8 48,11.2 44,10.5 43.2,11.5 42.5,12.5 41,14.5 38.5,18 37.2,21 35.6,23.2 35.5,24 33.5,27.5 32.5,29.9 32.3,31.2 29,30.9 25,31.7 20,31 19.8,32.2 15.5,32.4 11.2,33.2 11,35.5 10,37.2 8.5,36.9 3,36.8 -1,35.3 -2.2,35.1
+|-166,68.5 -156,71.3 -141,69.7 -128,70 -115,68.8 -96,68 -94,72 -85,69.5 -82,66 -87,64 -93,61 -94.5,58.8 -92,57 -85,55.3 -82.3,52.9 -79,54.5 -78,58.6 -77,62.5 -70,61 -65,60 -61,56 -56,52 -59.5,47.5 -64.5,49 -66,45 -70,43.8 -70.5,41.8 -74,40.5 -76,38.5 -75.9,36.5 -76.5,34.6 -79,33.3 -81.2,31.5 -80.1,26.7 -80.4,25.2 -81.7,25.9 -82.6,28 -83,29.2 -84.5,30 -86,30.4 -89.4,30.2 -90,29.1 -93.5,29.7 -97,27.9 -97.5,25 -97.8,22.3 -96,19 -94.5,18.2 -91.4,18.6 -90.4,21 -87,21.5 -87.5,19 -88.3,16 -86,15.9 -84,15 -83.3,13 -83.7,11 -82.2,9 -79.5,9.5 -77.5,8.5 -77.9,7.2 -79.8,7.4 -80.5,8.2 -82.8,8.1 -85.7,9.9 -85.9,11 -87.6,13 -91,13.9 -93.5,15.8 -96.5,15.7 -101,17.5 -105.5,20 -105.7,22.7 -109.4,25.6 -112.3,29.4 -114.5,31 -114.7,30 -112,26 -110,23.5 -109.5,23.2 -112,24.8 -115,28 -116.6,31.5 -117.2,32.6 -120.6,34.6 -122.5,37.5 -123.8,39.8 -124.4,42.7 -124,46.3 -124.7,48.4 -123,49.1 -127.6,50.7 -130.4,54.4 -133.5,57.8 -137,59 -140,59.7 -146,60.5 -151.7,59.2 -154,57 -158,55.7 -163,54.6 -157.5,58.6 -162,60 -165.4,61.5 -164.6,63.3 -161,64.4 -166.4,65.2 -164,66.5
+|-80,73.7 -68,70 -61.5,66.5 -65,62 -72,63 -78,64.5 -84,68 -89,70.5
+|-125,71.5 -118,77 -100,79.5 -80,82.5 -62,82.5 -75,78 -92,75 -105,73
+|-73,78 -66,81 -45,82.5 -25,82 -18,79 -20,75 -22,70.5 -26,68.4 -35,66 -40,65 -43,60 -48,61 -51,64 -53.5,67 -55,71 -60,75.8 -68,76
+|-24,64.9 -22,63.8 -17,63.5 -13.5,65 -15,66.4 -21,66.3
+|-5.7,50 1.5,51.2 1.7,52.8 0,53.5 -1.6,55.5 -2,57.6 -3.3,58.6 -5,58.6 -6,57.5 -5.5,55.5 -4.8,54.8 -3,54 -3,53.3 -4.5,52.9 -4.2,51.6 -5.3,51.7
+|-10,51.5 -6.2,52 -6,53.8 -5.5,55.2 -8,55.3 -10,54.2
+|-77.3,8.6 -75.5,10.8 -72,12.3 -71.3,11 -68,10.6 -64,10.6 -61.5,10.5 -60,8.5 -57,6 -54,5.8 -51.5,4.2 -50,1.8 -49.5,0 -48,-0.8 -44,-2.4 -40,-2.8 -37,-4.8 -35,-6 -35,-9 -37.5,-12.5 -39,-15 -39.2,-18 -40.8,-21.9 -42,-23 -44.7,-23.4 -48.5,-26 -48.7,-28.5 -51,-31 -53.5,-34 -56,-35 -57,-36.5 -57.6,-38.2 -62.2,-38.8 -62.3,-41 -65,-41 -65,-42.5 -67.5,-46 -65.8,-47.5 -69,-51.5 -68.5,-52.4 -66,-55 -70,-55 -74,-52.5 -75.5,-48 -74,-44 -73.5,-39 -73.2,-37 -71.6,-33 -71.4,-29 -70.4,-23 -70.2,-18.4 -71.5,-17.3 -76,-14 -77.5,-12 -79.6,-7.3 -81.2,-6 -80.3,-3.4 -80.9,-1.1 -80,1 -78.8,1.8 -77.8,4 -77.4,6.7
+|44,-25 47,-25.2 49.5,-17.5 50.3,-15.5 49.3,-12 44.4,-16.2 43.3,-21.8
+|79.8,6.5 81.8,7.4 81,9.6 79.9,9.4
+|130.2,31.3 131.6,31.4 135,33.5 138.5,34.6 140.8,35.7 141,38.3 142,40 141.4,41.5 140,42.3 141.7,42.6 143.3,42 145.5,43.3 142,45.4 141.6,44 140,41.4 139.8,40 137.3,36.8 135.5,35.6 132.5,35.4 130.9,34
+|120.1,23 121,22 122,25 121.5,25.3
+|120,18.5 122.3,18.5 122,14.5 124.2,12.6 126.5,7 125.4,5.6 123.2,7.7 121.8,6.9 122,10 120,14.5
+|95.2,5.6 97.6,5.2 100.4,2.2 104,-1.2 106,-3 105.8,-5.8 104.5,-5.8 102.3,-4 100.3,-1 98.6,1.7
+|105.2,-6.8 106,-5.9 108.5,-6.4 111,-6.4 114.6,-7.6 114.4,-8.7 110,-8.1 106.5,-7.4
+|109,1.5 109.7,2 111,1.7 113,3.2 115.5,5 117.2,6.9 119.2,5.4 117.8,4 118.4,1 117.5,0 116.5,-2 116,-3.8 114.5,-3.8 113,-3.1 110.2,-2.9 109.6,-1
+|119,-5.5 121,-1 125,1.5 124.5,0.5 120.5,0.8 120,-1
+|131,-1.3 134,-0.9 137.9,-1.5 141,-2.6 145,-4 147.5,-6 147.8,-8 150,-10.3 147,-10 143.5,-9.1 142.5,-9.3 141,-9.1 138.5,-8.3 137.7,-5.2 134.3,-3.8 132,-2.8
+|113.5,-22 114,-26 115,-30 115,-33.8 116.5,-35 118,-35 121,-33.8 124,-33 126,-32.2 129,-31.6 131.2,-31.5 134.2,-32.7 135.5,-34.8 137.8,-32.6 137.5,-35.2 138.5,-35.6 139.6,-37.2 141,-38.2 143.5,-38.8 146.3,-39.1 148,-37.8 150,-37.4 150.8,-34.5 152.5,-32.2 153.6,-28.5 153,-25.5 151,-23 149.2,-21.2 146.3,-19 145.3,-15 143.6,-14.2 142.5,-10.7 141.6,-12.9 141.5,-15.7 140.5,-17.5 139,-17 136,-15.2 136.8,-12.2 132.6,-11.5 131,-12.3 129.4,-14.9 127.8,-14.5 125.2,-14.5 122.9,-16.4 121.2,-19.5 118.8,-20.3 116.7,-20.6
+|144.6,-40.7 148.3,-40.9 148,-43.2 146,-43.6 145.2,-42.3
+|172.7,-34.4 174.5,-35.8 175.8,-37 178.5,-37.7 177,-39.3 176.8,-40 175,-41.4 174.6,-39.9 173.8,-39.2 174.6,-38 174.2,-36.5
+|172.6,-40.5 174.3,-41.7 173,-43.8 171,-45 169,-46.6 166.5,-46 168.3,-44 170.8,-42.5
+|-84.9,21.9 -82,23.2 -77,22 -74.2,20.2 -77.7,19.9 -80,21.8
+|-74.4,18.4 -72.8,19.9 -69.9,19.7 -68.4,18.6 -71.4,17.6`;
+const POLYS = LAND.split('|').map(p => {
+  const pts = p.trim().split(/\s+/).map(q => q.split(',').map(Number));
+  const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]);
+  return {pts, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys)};
+});
+const isLand = (lon, lat) => POLYS.some(P => {
+  if (lon < P.x0 || lon > P.x1 || lat < P.y0 || lat > P.y1) return false;
+  let c = false; const v = P.pts;
+  for (let i = 0, j = v.length - 1; i < v.length; j = i++) {
+    if ((v[i][1] > lat) !== (v[j][1] > lat) && lon < (v[j][0] - v[i][0]) * (lat - v[i][1]) / (v[j][1] - v[i][1]) + v[i][0]) c = !c;
+  }
+  return c;
+});
+// delegation node locations [lon, lat, chip side]
+const LOC = {usa: [-98, 39, 'r'], eu: [9, 49, 'l'], china: [104, 34, 'r'], india: [78, 21, 'b'], brazil: [-52, -9, 'r'],
+  saudi_arabia: [45, 24, 'l'], other_developed: [134, -25, 'l'], other_developing: [24, 3, 'b']};
+const LAT0 = 82, LAT1 = -56;
+
+const mapPanel = $('#mapPanel'), cv = $('#map'), ctx = cv.getContext('2d'), nodesEl = $('#nodes');
+let M = {W: 0, H: 0, sc: 1, ox: 0, oy: 0, dots: [], pos: {}};
+nodesEl.innerHTML = D.DELEGATIONS.map((d, i) => `<button class="node ${LOC[d.id][2]}" type="button" data-id="${esc(d.id)}" style="--pd:${(i * 0.35).toFixed(2)}s" aria-label="${esc(d.name)} — open Round 1 channel" title="${esc(d.name)}"><span class="ping"></span><span class="dot"></span><span class="chip"><img src="${S.flagSrc(d.id)}" alt="">${esc(d.code)}</span></button>`).join('');
+const proj = (lon, lat) => [M.ox + (lon + 180) * M.sc, M.oy + (LAT0 - lat) * M.sc];
+
+function layoutMap() {
+  const r = mapPanel.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+  M.W = r.width; M.H = r.height;
+  cv.width = Math.round(M.W * dpr); cv.height = Math.round(M.H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const padY = M.W < 640 ? 18 : 34;
+  M.sc = Math.min(M.W / 360, (M.H - padY * 2) / (LAT0 - LAT1));
+  M.ox = (M.W - 360 * M.sc) / 2; M.oy = (M.H - (LAT0 - LAT1) * M.sc) / 2;
+  const step = Math.max(4.2, M.W / 165);
+  M.step = step; M.dots = [];
+  const nodePts = D.DELEGATIONS.map(d => proj(LOC[d.id][0], LOC[d.id][1]));
+  for (let y = M.oy + step / 2; y < M.oy + (LAT0 - LAT1) * M.sc; y += step) {
+    for (let x = M.ox + step / 2; x < M.ox + 360 * M.sc; x += step) {
+      const lon = (x - M.ox) / M.sc - 180, lat = LAT0 - (y - M.oy) / M.sc;
+      if (!isLand(lon, lat)) continue;
+      let nd = 1e9; for (const p of nodePts) nd = Math.min(nd, Math.hypot(p[0] - x, p[1] - y));
+      M.dots.push({x, y, nd, ph: Math.random() * 6.28});
+    }
+  }
+  D.DELEGATIONS.forEach((d, i) => {
+    const [x, y] = nodePts[i]; M.pos[d.id] = [x, y];
+    const el = nodesEl.children[i]; el.style.left = `${x}px`; el.style.top = `${y}px`;
+  });
+}
+
+const MAPLINKS = D.BILATERALS.map(b => ({from: D.agent(b.a).delegation, to: D.agent(b.b).delegation, b}));
+let active = [], nextLink = 0, lastSpawn = -1e9, mapRunning = false;
+function spawnLink(now) {
+  const L = MAPLINKS[nextLink++ % MAPLINKS.length];
+  active.push({...L, t0: now});
+  const col = OUTC[L.b.outcome];
+  [L.from, L.to].forEach(id => {
+    const el = nodesEl.querySelector(`[data-id="${id}"]`);
+    el.style.setProperty('--hc', col); el.classList.add('hot');
+    setTimeout(() => el.classList.remove('hot'), 1600);
+  });
+  $('#mapLast').innerHTML = `<b style="color:${col}">● ${esc(agentTag(L.b.a))} ⇄ ${esc(agentTag(L.b.b))}</b> · ${esc(D.OUTCOMES[L.b.outcome])}`;
+}
+function curvePt(a, c, b, t) { const u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]; }
+function drawArc(L, prog, alpha) {
+  const a = M.pos[L.from], b = M.pos[L.to]; if (!a || !b) return;
+  const dx = b[0] - a[0], dy = b[1] - a[1], dist = Math.hypot(dx, dy);
+  const c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - dist * 0.35 - 10];
+  const col = OUTC[L.b.outcome];
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.shadowColor = col; ctx.shadowBlur = 10;
+  ctx.beginPath(); const n = 40;
+  for (let i = 0; i <= n * prog; i++) { const p = curvePt(a, c, b, i / n); i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }
+  ctx.stroke();
+  if (prog < 1) { const h = curvePt(a, c, b, prog); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(h[0], h[1], 2.4, 0, 6.28); ctx.fill(); }
+  ctx.restore();
+}
+function drawMap(now) {
+  ctx.clearRect(0, 0, M.W, M.H);
+  // graticule
+  ctx.strokeStyle = 'rgba(110,220,255,.07)'; ctx.lineWidth = 1; ctx.beginPath();
+  for (let lon = -180; lon <= 180; lon += 30) { const [x] = proj(lon, 0); ctx.moveTo(x, M.oy); ctx.lineTo(x, M.oy + (LAT0 - LAT1) * M.sc); }
+  for (let lat = -30; lat <= 60; lat += 30) { const [, y] = proj(0, lat); ctx.moveTo(M.ox, y); ctx.lineTo(M.ox + 360 * M.sc, y); }
+  ctx.stroke();
+  const [, eqY] = proj(0, 0); ctx.strokeStyle = 'rgba(255,176,32,.14)'; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.moveTo(M.ox, eqY); ctx.lineTo(M.ox + 360 * M.sc, eqY); ctx.stroke(); ctx.setLineDash([]);
+  // dots with a sweeping scan line
+  const sweepX = RM ? -1e4 : M.ox + ((now / 7000) % 1.25) * 360 * M.sc * 1.0 - 60;
+  const r = Math.max(0.9, M.step * 0.2);
+  for (const d of M.dots) {
+    let a = 0.26 + 0.06 * Math.sin(d.ph + now / 900);
+    const sx = d.x - sweepX; if (sx > -80 && sx < 6) a += 0.55 * Math.exp(-(sx * sx) / 900);
+    if (d.nd < 40) a += 0.35 * (1 - d.nd / 40);
+    ctx.fillStyle = `rgba(46,230,255,${Math.min(a, 1).toFixed(3)})`;
+    ctx.fillRect(d.x - r, d.y - r, r * 2, r * 2);
+  }
+  if (!RM) {
+    ctx.fillStyle = 'rgba(46,230,255,.5)'; ctx.fillRect(sweepX + 4, M.oy, 1, (LAT0 - LAT1) * M.sc);
+    if (now - lastSpawn > 1300) { spawnLink(now); lastSpawn = now; }
+    active = active.filter(L => now - L.t0 < 3600);
+    for (const L of active) {
+      const age = (now - L.t0) / 3600;
+      drawArc(L, Math.min(1, age / 0.38), age < 0.6 ? 1 : 1 - (age - 0.6) / 0.4);
+    }
+  } else {
+    MAPLINKS.forEach(L => drawArc(L, 1, 0.35));
+  }
+}
+function mapLoop(t) { if (!mapRunning) return; drawMap(t); requestAnimationFrame(mapLoop); }
+layoutMap();
+if (RM) drawMap(0);
+else new IntersectionObserver(es => { const v = es[0].isIntersecting; if (v && !mapRunning) { mapRunning = true; requestAnimationFrame(mapLoop); } else if (!v) mapRunning = false; }).observe(mapPanel);
+nodesEl.addEventListener('click', e => { const n = e.target.closest('.node'); if (n) { selectChannel(n.dataset.id, true); $('#r1').scrollIntoView({behavior: RM ? 'auto' : 'smooth'}); } });
+
+/* ───────── gauge + finance ───────── */
+const GC = {cx: 110, cy: 112, r: 88};
+const gPt = (v, rr) => { const a = Math.PI * (1 - (v - 1.5) / 1.5); return [GC.cx + rr * Math.cos(a), GC.cy - rr * Math.sin(a)]; };
+const gArc = (v0, v1, rr) => { const p = gPt(v0, rr), q = gPt(v1, rr); return `M${p[0].toFixed(1)} ${p[1].toFixed(1)} A${rr} ${rr} 0 0 1 ${q[0].toFixed(1)} ${q[1].toFixed(1)}`; };
+const gAng = v => (v - 1.5) / 1.5 * 180;
+(() => {
+  let s = `<path d="${gArc(1.5, 3, GC.r)}" stroke="rgba(110,220,255,.12)" stroke-width="10" fill="none"/>`;
+  s += `<path d="${gArc(1.5, 2.0, GC.r)}" stroke="#35f0b0" stroke-width="3" fill="none" opacity=".85"/>`;
+  s += `<path d="${gArc(2.0, 2.5, GC.r)}" stroke="#ffb020" stroke-width="3" fill="none" opacity=".85"/>`;
+  s += `<path d="${gArc(2.5, 3.0, GC.r)}" stroke="#ff4f64" stroke-width="3" fill="none" opacity=".85"/>`;
+  for (let i = 0; i <= 15; i++) {
+    const v = 1.5 + i * 0.1, maj = i % 5 === 0, p = gPt(v, GC.r - 7), q = gPt(v, GC.r - (maj ? 16 : 11));
+    s += `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}" y2="${q[1].toFixed(1)}" stroke="${maj ? '#d5eef3' : 'rgba(213,238,243,.35)'}" stroke-width="${maj ? 1.4 : 1}"/>`;
+    if (maj) { const t = gPt(v, GC.r - 28); s += `<text x="${t[0].toFixed(1)}" y="${(t[1] + 3).toFixed(1)}" fill="#7b98a0" font-size="9" font-family="JetBrains Mono, monospace" text-anchor="middle">${v.toFixed(1)}</text>`; }
+  }
+  const g = gPt(2.15, GC.r + 8), ang = gAng(2.15);
+  s += `<g transform="rotate(${ang.toFixed(2)} ${g[0].toFixed(1)} ${g[1].toFixed(1)})"><path d="M${g[0] - 4} ${g[1] - 3} L${g[0] + 3} ${g[1]} L${g[0] - 4} ${g[1] + 3}Z" fill="#ffb020"/></g>`;
+  s += `<text x="${GC.cx}" y="${GC.cy - 34}" fill="#46616a" font-size="8" letter-spacing="1.5" font-family="JetBrains Mono, monospace" text-anchor="middle">PARIS ≤ 2.0</text>`;
+  s += `<g id="gWob"><g id="gNeedle" transform="rotate(${ang.toFixed(2)} ${GC.cx} ${GC.cy})"><line x1="${GC.cx + 10}" y1="${GC.cy}" x2="${GC.cx - GC.r + 14}" y2="${GC.cy}" stroke="#2ee6ff" stroke-width="2" stroke-linecap="round" style="filter:drop-shadow(0 0 4px #2ee6ff)"/></g></g>`;
+  s += `<circle cx="${GC.cx}" cy="${GC.cy}" r="6" fill="#03070a" stroke="#2ee6ff" stroke-width="1.5"/><circle cx="${GC.cx}" cy="${GC.cy}" r="2" fill="#2ee6ff"/>`;
+  $('#gauge').innerHTML = s;
+})();
+const [w0, w1] = G.warming;
+function setWarm(v) {
+  $('#gNeedle').setAttribute('transform', `rotate(${gAng(v).toFixed(2)} ${GC.cx} ${GC.cy})`);
+  $('#wVal').textContent = v.toFixed(2);
+  $('#wDelta').textContent = `Δ ${(v - w0) <= -0.005 ? '−' : ''}${Math.abs(v - w0).toFixed(2)} °C`;
+}
+if (RM) setWarm(w1);
+else {
+  setWarm(w0);
+  setTimeout(() => {
+    const t0 = performance.now(), dur = 2000;
+    const step = t => { const k = Math.min(1, (t - t0) / dur), e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; setWarm(w0 + (w1 - w0) * e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }, 900);
+}
+const {pledged, requested} = G.finance, FMAX = 400;
+$('#fPl').textContent = pledged; $('#fRq').textContent = requested;
+$('#fGap').style.left = `${pledged / FMAX * 100}%`; $('#fGap').style.width = `${(requested - pledged) / FMAX * 100}%`;
+$('#fbar').style.setProperty('--w', `${pledged / FMAX * 100}%`);
+$('#fAlert').textContent = `Gap ${requested - pledged} · ${Math.round(pledged / requested * 100)}% covered`;
+requestAnimationFrame(() => requestAnimationFrame(() => $('#fbar').classList.add('on')));
+
+/* ───────── ticker ───────── */
+(() => {
+  const r1 = D.DELEGATIONS.flatMap(d => d.thread.map(([role, text]) => ({d: d.id, tag: `${d.code}·${D.ROLE_SHORT[role]}`, who: shortName(S.CAST[d.id][role]), text, bi: false})));
+  const r2 = D.BILATERALS.flatMap(b => b.lines.map(([side, text]) => { const id = side === 'a' ? b.a : b.b, other = side === 'a' ? b.b : b.a, a = D.agent(id); return {d: a.delegation, tag: `${agentTag(id)} ⇄ ${D.BY_ID[D.agent(other).delegation].code}`, who: shortName(a.name), text, bi: true}; }));
+  const mix = []; const n = Math.max(r1.length, r2.length);
+  for (let i = 0; i < n; i++) { if (r1[i]) mix.push(r1[i]); if (r2[i] && i % 2 === 0) mix.push(r2[i]); }
+  const html = mix.map(m => `<span class="tk"><img src="${S.flagSrc(m.d)}" alt=""><b class="${m.bi ? 'bi' : ''}">${esc(m.tag)}</b><span class="who">${esc(m.who)}</span><q>${esc(m.text)}</q></span>`).join('');
+  const tr = $('#ticker'); tr.innerHTML = html + (RM ? '' : html);
+  requestAnimationFrame(() => tr.style.setProperty('--dur', `${Math.round(tr.scrollWidth / 2 / 70)}s`));
+})();
+
+/* ───────── Round 1: desk ───────── */
+const desk = $('#desk');
+const vuAng = r => -60 + Math.min(r, 5) / 5 * 120;
+const vuPt = (deg, rr) => { const a = deg * Math.PI / 180; return [60 + rr * Math.sin(a), 66 - rr * Math.cos(a)]; };
+function vuSVG(d) {
+  let s = `<svg class="vu" viewBox="0 0 120 74" aria-hidden="true">`;
+  const ap = (a0, a1, rr) => { const p = vuPt(a0, rr), q = vuPt(a1, rr); return `M${p[0].toFixed(1)} ${p[1].toFixed(1)} A${rr} ${rr} 0 0 1 ${q[0].toFixed(1)} ${q[1].toFixed(1)}`; };
+  s += `<path d="${ap(-60, 60, 50)}" stroke="rgba(213,238,243,.25)" stroke-width="1" fill="none"/>`;
+  s += `<path d="${ap(vuAng(3), 60, 50)}" stroke="#35f0b0" stroke-width="3" fill="none" opacity=".7"/>`;
+  for (let i = 0; i <= 10; i++) {
+    const a = -60 + i * 12, maj = i % 2 === 0, p = vuPt(a, 50), q = vuPt(a, maj ? 43 : 46);
+    s += `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}" y2="${q[1].toFixed(1)}" stroke="rgba(213,238,243,${maj ? .7 : .35})" stroke-width="1"/>`;
+    if (maj) { const t = vuPt(a, 35); s += `<text x="${t[0].toFixed(1)}" y="${(t[1] + 3).toFixed(1)}" font-size="8" fill="#7b98a0" text-anchor="middle" font-family="JetBrains Mono, monospace">${i / 2}</text>`; }
+  }
+  const g = vuPt(vuAng(d.rate[0]), 55);
+  s += `<circle cx="${g[0].toFixed(1)}" cy="${g[1].toFixed(1)}" r="2.4" fill="#ffb020"/>`;
+  s += `<text x="60" y="44" font-size="6.5" fill="#46616a" text-anchor="middle" letter-spacing="1" font-family="JetBrains Mono, monospace">%/YR</text>`;
+  s += `<line class="needle" x1="60" y1="66" x2="60" y2="18" stroke="#2ee6ff" stroke-width="1.6" stroke-linecap="round" style="filter:drop-shadow(0 0 3px #2ee6ff)"/>`;
+  s += `<circle cx="60" cy="66" r="4" fill="#03070a" stroke="#2ee6ff" stroke-width="1.2"/></svg>`;
+  return s;
+}
+desk.innerHTML = D.DELEGATIONS.map((d, i) => {
+  const unanimous = /^3 of 3/.test(d.votes);
+  return `<div class="strip" role="button" tabindex="0" aria-pressed="false" data-id="${esc(d.id)}" aria-label="${esc(d.name)} channel — open log"
+    style="--acc:${esc(d.accent)};--a0:${vuAng(d.rate[0]).toFixed(1)}deg;--a1:${vuAng(d.rate[1]).toFixed(1)}deg;--dl:${(i * 0.12).toFixed(2)}s">
+    <div class="s-top"><span>CH ${pad(i + 1)}</span><i class="led ${unanimous ? '' : 'amb'}" title="${esc(d.status)}"></i></div>
+    <div class="s-flag"><img src="${S.flagSrc(d.id)}" alt="${esc(d.name)} flag"><b>${esc(d.code)}</b></div>
+    <div class="s-name">${esc(d.name)}</div>
+    <div class="s-av">${D.ROLE_KEYS.map(role => { const n = S.CAST[d.id][role]; return `<figure class="av" data-role="${role}"><img src="${S.PHOTOS[n]}" alt="${esc(n)}, ${esc(D.ROLES[role])}" title="${esc(n)} · ${esc(D.ROLES[role])}"><figcaption>${esc(D.ROLE_SHORT[role])}</figcaption></figure>`; }).join('')}</div>
+    <canvas class="wave"></canvas>
+    <div class="s-tx"><span class="who">—</span><span class="st">IDLE</span></div>
+    ${vuSVG(d)}
+    <div class="s-rate"><span>${d.rate[0].toFixed(1)}</span>→<b>${d.rate[1].toFixed(1)}</b><small>%/yr</small></div>
+    <dl class="s-meta"><div><dt>PEAK</dt><dd>${esc(d.peak)}</dd></div><div><dt>FUND</dt><dd class="${d.fund < 0 ? 'neg' : d.fund > 0 ? 'pos' : ''}">${esc(fundStr(d.fund))}</dd></div><div><dt>VOTE</dt><dd>${esc(d.votes.replace(' of ', '/'))}</dd></div></dl>
+    <div class="s-open">▸ TAP LOG</div>
+  </div>`;
+}).join('');
+const strips = [...desk.querySelectorAll('.strip')];
+
+// per-channel speaking simulation drives avatar highlight + waveform
+const CH = strips.map((el, i) => ({el, d: D.DELEGATIONS[i], cv: el.querySelector('.wave'), line: i % D.DELEGATIONS[i].thread.length, talking: false, until: 0, bars: new Float32Array(28), who: el.querySelector('.s-tx .who'), st: el.querySelector('.s-tx .st')}));
+function sizeWaves() { const dpr = Math.min(devicePixelRatio || 1, 2); CH.forEach(c => { const r = c.cv.getBoundingClientRect(); c.cv.width = Math.max(1, Math.round(r.width * dpr)); c.cv.height = Math.max(1, Math.round(r.height * dpr)); c.dpr = dpr; }); }
+function setSpeaker(c, role) {
+  c.el.querySelectorAll('.av').forEach(a => a.classList.toggle('tx', a.dataset.role === role));
+  c.who.textContent = role ? D.ROLE_SHORT[role] : '—';
+  c.st.textContent = role ? 'TX' : 'IDLE'; c.st.classList.toggle('on', !!role);
+}
+function drawWave(c, now) {
+  const g = c.cv.getContext('2d'), W = c.cv.width, H = c.cv.height, n = c.bars.length, bw = W / n;
+  g.clearRect(0, 0, W, H);
+  for (let i = 0; i < n; i++) {
+    const target = c.talking ? (0.25 + 0.75 * Math.abs(Math.sin(now / 90 + i * 1.7 + c.line) * Math.sin(now / 230 + i * 0.6))) * (0.6 + 0.4 * Math.random()) : 0.04 + 0.03 * Math.random();
+    c.bars[i] += (target - c.bars[i]) * 0.35;
+    const h = Math.max(1, c.bars[i] * H * 0.92);
+    g.fillStyle = c.talking ? (c.bars[i] > 0.82 ? '#ffb020' : '#2ee6ff') : 'rgba(110,220,255,.35)';
+    g.fillRect(i * bw + bw * 0.18, (H - h) / 2, bw * 0.64, h);
+  }
+}
+let deskRunning = false;
+function deskLoop(now) {
+  if (!deskRunning) return;
+  CH.forEach((c, i) => {
+    if (now > c.until) {
+      if (c.talking) { c.talking = false; c.until = now + 500 + Math.random() * 900; setSpeaker(c, null); }
+      else { const [role, text] = c.d.thread[c.line % c.d.thread.length]; c.line++; c.talking = true; c.until = now + 1400 + text.length * 32; setSpeaker(c, role); }
+    }
+    drawWave(c, now);
+  });
+  requestAnimationFrame(deskLoop);
+}
+sizeWaves();
+if (RM) { CH.forEach((c, i) => { c.talking = i % 2 === 0; setSpeaker(c, c.talking ? c.d.thread[0][0] : null); for (let k = 0; k < 6; k++) drawWave(c, k * 50 + i * 300); }); desk.classList.add('armed'); }
+else {
+  CH.forEach((c, i) => { c.until = performance.now() + i * 260; });
+  new IntersectionObserver(es => {
+    const v = es[0].isIntersecting;
+    if (v) { desk.classList.add('armed'); if (!deskRunning) { deskRunning = true; requestAnimationFrame(deskLoop); } } else deskRunning = false;
+  }, {threshold: 0.15}).observe(desk);
+}
+
+// terminal log
+const termBody = $('#termBody');
+let termToken = 0, termSeen = false, selected = null;
+function buildLog(d) {
+  const L = []; let s = 0;
+  L.push({t: s, cls: 'sys', tag: 'SYS', who: '', text: `channel open · ${d.name} · 3 agents seated · mandate draft pending`});
+  d.thread.forEach(([role, text]) => { s += 14 + Math.round(text.length * 0.42); L.push({t: s, cls: role, tag: `[${D.ROLE_SHORT[role]}]`, who: shortName(S.CAST[d.id][role]), text}); });
+  s += 22; L.push({t: s, cls: 'prop', tag: 'PROPOSE', who: '', text: `mandate → ${d.rate[1].toFixed(1)}%/yr · peak ${d.peak} · fund ${fundStr(d.fund)} $bn/yr`});
+  s += 9; L.push({t: s, cls: 'vote', tag: 'VOTE', who: '', text: `${d.votes} in favour`});
+  s += 3; L.push({t: s, cls: 'sys', tag: 'SYS', who: '', text: `${d.status.toUpperCase()} · position locked (${d.rate[0].toFixed(1)}% → ${d.rate[1].toFixed(1)}%/yr)`, fin: true});
+  return L;
+}
+function renderTerm(d, animate) {
+  const tok = ++termToken;
+  const idx = D.DELEGATIONS.indexOf(d);
+  $('#termFlag').src = S.flagSrc(d.id); $('#termFlag').alt = `${d.name} flag`;
+  $('#termPath').textContent = `ch${pad(idx + 1)}://${d.id}/delegation · ${D.ROLE_KEYS.map(r => shortName(S.CAST[d.id][r])).join(' · ')}`;
+  const L = buildLog(d);
+  termBody.innerHTML = L.map((l, i) => `<div class="tl ${l.cls === 'sys' ? 'sys' : ''} ${l.fin ? 'fin' : ''}" data-i="${i}" ${animate ? 'hidden' : ''}><time>${fmtHMS(l.t)}</time><span class="rt ${esc(l.cls)}">${esc(l.tag)}</span><span>${l.who ? `<span class="who">${esc(l.who)}</span>` : ''}<span class="txt">${animate ? '' : esc(l.text)}</span></span></div>`).join('') + `<span class="cursor"></span>`;
+  if (!animate) return;
+  const rows = [...termBody.querySelectorAll('.tl')], cursor = termBody.querySelector('.cursor');
+  let r = 0, ch = 0;
+  const step = () => {
+    if (tok !== termToken) return;
+    if (r >= rows.length) return;
+    const row = rows[r], txt = row.querySelector('.txt'), full = L[r].text;
+    row.hidden = false; row.querySelector('.txt').after(cursor);
+    ch = Math.min(full.length, ch + 3); txt.textContent = full.slice(0, ch);
+    if (ch >= full.length) { r++; ch = 0; setTimeout(() => requestAnimationFrame(step), 220); if (r >= rows.length) termBody.appendChild(cursor); }
+    else requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function selectChannel(id, animate) {
+  const d = D.BY_ID[id]; if (!d) return;
+  selected = id;
+  strips.forEach(s => { const on = s.dataset.id === id; s.setAttribute('aria-pressed', on); s.querySelector('.s-open').textContent = on ? '▾ ON AIR' : '▸ TAP LOG'; });
+  renderTerm(d, animate && !RM);
+}
+desk.addEventListener('click', e => { const s = e.target.closest('.strip'); if (s) { selectChannel(s.dataset.id, true); const t = $('#term').getBoundingClientRect(); if (t.top > innerHeight - 120) $('#term').scrollIntoView({behavior: RM ? 'auto' : 'smooth', block: 'nearest'}); } });
+desk.addEventListener('keydown', e => { const s = e.target.closest('.strip'); if (s && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectChannel(s.dataset.id, true); } });
+selectChannel('usa', false);
+if (!RM) new IntersectionObserver(es => { if (es[0].isIntersecting && !termSeen) { termSeen = true; selectChannel(selected, true); } }, {threshold: 0.3}).observe($('#term'));
+
+/* ───────── Round 2: gantt ───────── */
+const T = Math.ceil(Math.max(...D.BILATERALS.map(b => b.t + b.d))) + 1;
+const LANES = D.AGENTS, LIDX = Object.fromEntries(LANES.map((a, i) => [a.id, i]));
+const MCOUNT = {}; D.BILATERALS.forEach(b => { MCOUNT[b.a] = (MCOUNT[b.a] || 0) + 1; MCOUNT[b.b] = (MCOUNT[b.b] || 0) + 1; });
+const gTrack = $('#gTrack'), gLabels = $('#gLabels'), gAxis = $('#gAxis');
+gTrack.style.backgroundSize = `calc(100% / ${T}) 100%`;
+gAxis.innerHTML = Array.from({length: T + 1}, (_, m) => `<span class="${m % 2 ? 'odd' : ''}" style="left:${(m / T * 100).toFixed(3)}%">${pad(m)}</span>`).join('');
+gLabels.innerHTML = LANES.map((a, i) => { const d = D.BY_ID[a.delegation]; return `<div class="lane-lab ${i % 3 === 0 ? 'g0' : ''} ${MCOUNT[a.id] ? '' : 'idle'}" data-l="${i}" title="${esc(a.name)} · ${esc(D.ROLES[a.role])} · ${esc(d.name)}"><img class="lp" src="${S.PHOTOS[a.name]}" alt="${esc(a.name)}"><img class="lf" src="${S.flagSrc(d.id)}" alt="${esc(d.code)}"><span class="ln">${esc(shortName(a.name))}</span><span class="lr">${esc(D.ROLE_SHORT[a.role])}</span><span class="lc">${MCOUNT[a.id] ? '×' + MCOUNT[a.id] : '·'}</span></div>`; }).join('');
+let gh = LANES.map((a, i) => `<div class="lane-bg ${i % 3 === 0 ? 'g0' : ''}"></div>`).join('');
+D.BILATERALS.forEach((b, i) => {
+  const la = LIDX[b.a], lb = LIDX[b.b], left = (b.t / T * 100).toFixed(3), w = (b.d / T * 100).toFixed(3);
+  const label = `${agentTag(b.a)} ⇄ ${agentTag(b.b)} · ${b.topic} · ${D.OUTCOMES[b.outcome]}`;
+  gh += `<button type="button" class="bar o-${esc(b.outcome)}" data-i="${i}" style="left:${left}%;width:${w}%;top:calc(var(--H) * ${la} + 4px)" aria-label="${esc(label)}"><span>${esc(b.topic)}</span></button>`;
+  gh += `<button type="button" class="bar o-${esc(b.outcome)}" data-i="${i}" style="left:${left}%;width:${w}%;top:calc(var(--H) * ${lb} + 4px)" aria-label="${esc(label)}" tabindex="-1"><span>⇄ ${esc(agentTag(b.a))}</span></button>`;
+  const lo = Math.min(la, lb), hi = Math.max(la, lb);
+  gh += `<i class="link o-${esc(b.outcome)}" data-i="${i}" style="left:calc(${left}% + 5px);top:calc(var(--H) * ${lo + 0.5});height:calc(var(--H) * ${hi - lo})"></i>`;
+});
+gh += `<div class="g-head" id="gHead"><span id="gHeadLab">T+00:00</span></div>`;
+gTrack.innerHTML = gh;
+const gHead = $('#gHead'), gHeadLab = $('#gHeadLab');
+const MEL = D.BILATERALS.map((b, i) => [...gTrack.querySelectorAll(`[data-i="${i}"]`)]);
+const MST = D.BILATERALS.map(() => -1);
+// legend
+const OC = {agreed: 0, offer: 0, stalled: 0}; D.BILATERALS.forEach(b => OC[b.outcome]++);
+$('#legend').innerHTML = Object.keys(OC).map(k => `<span><i style="background:${OUTC[k]}"></i>${esc(D.OUTCOMES[k])} <b id="lg-${k}">0</b>/${OC[k]}</span>`).join('');
+
+// hover linking: highlight both bars, connector and lane labels
+function hl(i, on) {
+  if (i == null) return;
+  MEL[i].forEach(el => el.classList.toggle('hl', on));
+  const b = D.BILATERALS[i];
+  [b.a, b.b].forEach(id => gLabels.children[LIDX[id]].classList.toggle('hl', on));
+}
+let hov = null;
+gTrack.addEventListener('pointerover', e => { const b = e.target.closest('.bar'); const i = b ? +b.dataset.i : null; if (i !== hov) { hl(hov, false); hov = i; hl(hov, true); } });
+gTrack.addEventListener('pointerleave', () => { hl(hov, false); hov = null; });
+gTrack.addEventListener('focusin', e => { const b = e.target.closest('.bar'); if (b) { hl(hov, false); hov = +b.dataset.i; hl(hov, true); } });
+gTrack.addEventListener('click', e => {
+  const b = e.target.closest('.bar');
+  if (b) { openIntercept(+b.dataset.i, b); return; }
+  const r = gTrack.getBoundingClientRect(); setNow((e.clientX - r.left) / r.width * T);
+});
+gAxis.addEventListener('click', e => { const r = gAxis.getBoundingClientRect(); setNow((e.clientX - r.left) / r.width * T); });
+
+// playback
+const feed = $('#feed');
+let now = 0, lastNow = -0.001, playing = false, holdUntil = 0, lastFrame = 0, events = 0;
+const SPEED = T / 26; // minutes per second
+const EVENTS = D.BILATERALS.flatMap((b, i) => [{t: b.t, i, kind: 'open'}, {t: b.t + b.d, i, kind: 'close'}]).sort((x, y) => x.t - y.t || (x.kind === 'close' ? -1 : 1));
+function feedItem(ev) {
+  const b = D.BILATERALS[ev.i], li = document.createElement('li');
+  const lab = ev.kind === 'open' ? `<span class="ev open">OPEN</span>` : `<span class="ev ${esc(b.outcome)}">${esc(D.OUTCOMES[b.outcome].toUpperCase())}</span>`;
+  li.innerHTML = `<button type="button" data-i="${ev.i}"><time>${fmtT(ev.t)}</time><span>${lab}<span class="pr">${esc(agentTag(b.a))} ⇄ ${esc(agentTag(b.b))}</span><em>${ev.kind === 'open' ? '“' + esc(b.topic) + '”' : esc(shortName(D.agent(b.a).name)) + ' × ' + esc(shortName(D.agent(b.b).name)) + ' · ' + b.d + ' min'}</em></span></button>`;
+  feed.prepend(li); events++;
+  while (feed.children.length > 40) feed.lastChild.remove();
+  $('#feedN').textContent = `${events} events`;
+}
+feed.addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) openIntercept(+b.dataset.i, b); });
+function updateBars() {
+  let live = 0; const done = {agreed: 0, offer: 0, stalled: 0};
+  D.BILATERALS.forEach((b, i) => {
+    const st = now < b.t ? 0 : now < b.t + b.d ? 1 : 2;
+    if (st === 1) live++; if (st === 2) done[b.outcome]++;
+    if (st !== MST[i]) { MST[i] = st; MEL[i].forEach(el => { el.classList.toggle('pend', st === 0); el.classList.toggle('live', st === 1); }); }
+  });
+  $('#liveN').textContent = live;
+  Object.keys(done).forEach(k => { $(`#lg-${k}`).textContent = done[k]; });
+  const pct = Math.min(100, now / T * 100);
+  gHead.style.left = `${pct}%`; gHeadLab.textContent = fmtT(Math.min(now, T)); $('#tNow').textContent = fmtT(Math.min(now, T));
+  gHeadLab.style.transform = pct > 92 ? 'translateX(-100%)' : pct < 6 ? 'none' : 'translateX(-50%)';
+}
+function emit(from, to) { EVENTS.forEach(ev => { if (ev.t > from && ev.t <= to) feedItem(ev); }); }
+function setNow(m) {
+  now = Math.max(0, Math.min(T, m)); feed.innerHTML = ''; events = 0;
+  emit(-1, now); if (!events) feed.innerHTML = `<li class="feed-empty">No traffic yet — press play.</li>`, events = 0;
+  lastNow = now; updateBars();
+}
+function frame(t) {
+  if (!playing) return;
+  const dt = lastFrame ? Math.min(0.1, (t - lastFrame) / 1000) : 0; lastFrame = t;
+  if (now >= T) {
+    if (!holdUntil) holdUntil = t + 2600;
+    if (t > holdUntil) { holdUntil = 0; setNow(0); }
+  } else {
+    if (feed.querySelector('.feed-empty')) feed.innerHTML = '';
+    now = Math.min(T, now + dt * SPEED); emit(lastNow, now); lastNow = now; updateBars();
+  }
+  requestAnimationFrame(frame);
+}
+const playBtn = $('#play');
+function setPlaying(p) {
+  playing = p; playBtn.textContent = p ? '❚❚ PAUSE' : '▶ PLAY'; playBtn.setAttribute('aria-pressed', String(p));
+  if (p) { if (now >= T) setNow(0); lastFrame = 0; requestAnimationFrame(frame); }
+}
+playBtn.addEventListener('click', () => setPlaying(!playing));
+if (RM) { setNow(T); setPlaying(false); }
+else {
+  setNow(0); setPlaying(false);
+  let started = false;
+  new IntersectionObserver(es => { if (es[0].isIntersecting && !started) { started = true; setPlaying(true); } }, {threshold: 0.25}).observe(gTrack);
+}
+
+/* ───────── intercept drawer ───────── */
+const icpt = $('#icpt'), scrim = $('#scrim'), icptBody = $('#icptBody');
+let lastFocus = null, decToken = 0;
+const GLYPHS = '░▒▓█#%&@$<>/\\01ABCDEFX';
+function openIntercept(i, from) {
+  const b = D.BILATERALS[i], A = D.agent(b.a), B = D.agent(b.b), col = OUTC[b.outcome];
+  lastFocus = from || document.activeElement;
+  $('#icptId').textContent = `0x${((i + 7) * 2654435761 >>> 0).toString(16).slice(-4).toUpperCase()} · LINK ${pad(i + 1)}`;
+  const party = (ag, side) => { const d = D.BY_ID[ag.delegation]; return `<div class="party ${side}"><img class="pp" src="${S.PHOTOS[ag.name]}" alt="${esc(ag.name)}"><div><div class="pn">${esc(ag.name)}</div><div class="pr2"><img src="${S.flagSrc(d.id)}" alt="">${esc(d.code)} · ${esc(D.ROLE_SHORT[ag.role])}</div></div></div>`; };
+  icptBody.innerHTML = `
+    <div class="icpt-meta"><span>Window <b>${fmtT(b.t)} → ${fmtT(b.t + b.d)}</b></span><span>Duration <b>${b.d} min</b></span><span>Signal <b style="color:var(--ok)">decrypted</b></span></div>
+    <h3 id="icptTitle">${esc(b.topic)}</h3>
+    <div class="parties">${party(A, 'a')}<span class="x">⇄</span>${party(B, 'b')}</div>
+    <div class="wire">${b.lines.map(([s, text]) => { const ag = s === 'a' ? A : B; return `<div class="wl ${s}"><span class="wt">${esc(agentTag(ag.id))} ▸</span><span class="wx" data-t="${esc(text)}"></span></div>`; }).join('')}</div>
+    <div class="stamp" style="--oc:${col}">${esc(D.OUTCOMES[b.outcome])}</div>
+    <div class="icpt-foot">Intercepted on bilateral link · Round 2 · illustrative transcript</div>`;
+  icpt.classList.add('on'); scrim.classList.add('on'); icpt.setAttribute('aria-hidden', 'false');
+  $('#icptClose').focus({preventScroll: true});
+  const lines = [...icptBody.querySelectorAll('.wx')], stamp = icptBody.querySelector('.stamp');
+  const tok = ++decToken;
+  if (RM) { lines.forEach(l => { l.textContent = l.dataset.t; }); stamp.classList.add('on'); return; }
+  let f = 0;
+  const step = () => {
+    if (tok !== decToken) return;
+    let done = true;
+    lines.forEach((l, j) => {
+      const full = l.dataset.t, rev = (f - j * 16) * 1.6;
+      if (rev < 0) { l.textContent = ''; done = false; return; }
+      if (rev >= full.length) { l.textContent = full; return; }
+      done = false;
+      let s = full.slice(0, rev | 0);
+      for (let k = rev | 0; k < Math.min(full.length, (rev | 0) + 14); k++) s += full[k] === ' ' ? ' ' : GLYPHS[(Math.random() * GLYPHS.length) | 0];
+      l.textContent = s;
+    });
+    f++;
+    if (done) stamp.classList.add('on'); else requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function closeIntercept() {
+  if (!icpt.classList.contains('on')) return;
+  decToken++; icpt.classList.remove('on'); scrim.classList.remove('on'); icpt.setAttribute('aria-hidden', 'true');
+  if (lastFocus && lastFocus.focus) lastFocus.focus({preventScroll: true});
+}
+$('#icptClose').addEventListener('click', closeIntercept);
+scrim.addEventListener('click', closeIntercept);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeIntercept(); });
+
+/* ───────── credits ───────── */
+const undouble = s => { const h = s.length / 2; return s.length % 2 === 0 && s.slice(0, h) === s.slice(h) ? s.slice(0, h) : s; };
+const seen = new Set();
+$('#credits').innerHTML = S.CREDITS.filter(c => !seen.has(c.name) && seen.add(c.name)).map(c => `<div><a href="${esc(c.source)}" target="_blank" rel="noopener">${esc(c.name)}</a> — ${esc(undouble(c.credit))} · ${esc(c.license)}</div>`).join('');
+
+/* ───────── resize ───────── */
+let rz;
+addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { layoutMap(); if (RM || !mapRunning) drawMap(performance.now()); sizeWaves(); if (RM) CH.forEach((c, i) => { for (let k = 0; k < 6; k++) drawWave(c, k * 50 + i * 300); }); }, 120); });
+})();
+</script>
+</body>
+</html>
