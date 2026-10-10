@@ -1,5 +1,28 @@
 # simpact
 
+## Nested climate negotiation / agent dynamics lab
+
+The climate experiment has six delegations with three members each: head
+negotiator, economic minister and climate adviser. Inspect each member's position,
+each round's private team discussion and mandate support, then test member-to-member
+or group meeting requests with a five-tick acknowledgement deadline.
+
+```bash
+uv sync
+uv run python -m climate_sim --seed 42 --output runs/my-climate-run
+uv run python -m climate_sim.lab --run runs/my-climate-run --port 8766
+```
+
+Open `http://127.0.0.1:8766/`. This is a local researcher replay and a manual meeting
+protocol sandbox, not a live multi-user summit. Set `GEMINI_API_KEY` locally and add
+`--backend gemini` to generate LLM agent runs. Offline policies and the mock climate
+evaluator are explicitly labelled; private archives are not public summit data.
+
+See [the agent lab guide](docs/agent_lab.md) for information boundaries, member/human
+controllers, meeting protocol details and the remaining live-integration work.
+
+## Original Model UN simulator
+
 A Model UN simulation with LLM agents. Each country delegation is an autonomous agent with its own persona, private objectives, memory and tools. Delegations give speeches, negotiate privately one to one, draft resolutions and vote, while a Chair (the orchestrator) moves the session through its phases with broadcasts.
 
 Built on [AutoGen Core](https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/index.html), the event-driven runtime from Microsoft AutoGen, with Gemini as the model.

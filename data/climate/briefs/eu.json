@@ -1,0 +1,53 @@
+{
+  "delegation": "eu",
+  "title": "European Union",
+  "variant": "national",
+  "source_file": "materials/6R-WCS-Briefing-Statement-EU-v12.pdf",
+  "source_sha256": "9e7f2a9a3b30fbafa7c9a0d5989a117808e43ce07e3eac2edc39308ef497f9f3",
+  "source_url": "https://www.climateinteractive.org/world-climate-simulation-resources/",
+  "source_pages": [
+    {
+      "page": 1,
+      "text": "To: Negotiators for European Union at United Nations World Climate Summit Subject: Briefing on Negotiating Goals Goals The nations of the EU seek to negotiate a global agreement to reduce greenhouse gas emissions that achieves the best outcome for our economies and national interests, as well as for the world. At the 2015 UN climate negotiations in Paris, nations agreed to a goal of limiting global warming to “well below 2°C above pre-industrial levels and pursuing efforts to limit the temperature increase to 1.5°C above pre-industrial levels.” You must now decide on the following: 1. Actions to reduce carbon emissions, if any. EU emissions since 1990 have declined modestly and without continued action, they are expected to roughly stay flat. You can decide whether EU emissions will maintain this peak (if so, name the current year as your Peak Year), when they will decline, and at what annual rate emissions decline, if at all. See the gray boxes on the next page for additional guidance. 2. Whether to make commitments to reduce deforestation or plant new forest area. 3. How much the EU will contribute, if at all, to a global climate fund, which is intended to provide at least $300 billion per year until 2035 for developing countries to reduce their emissions and adapt to climate change. Context The scientific consensus on climate is clear: over 97% of climate scientists agree that climate change is happening, that it is caused primarily by use of fossil fuels, and that the impacts could be devastating. 1 EU research has shown that climate change is already affecting our nations and that without dramatic reductions in global emissions, the damage will become far more severe. Public Opinion Most people in our countries believe climate change is real and that human activity contributes significantly to it. Most support international agreements to address climate change, but trust in government and international institutions has eroded since the COVID-19 pandemic and the war in Ukraine. While climate change remains a priority for EU citizens, it ranks below defense, security, economic growth, and cost of living. EU politicians and political opinion strongly condemned the US decision to leave the Paris Agreement but are willing to continue to work with US sub-national actors to the extent possible. Europeans view China’s actions as falling “well short” of needed progress from the world’s largest emitter. Opportunities Reducing emissions has multiple benefits beyond climate stability. A clean energy transition can decrease reliance on Russian oil and natural gas, create jobs, and improve air quality. National Action The EU has been a leader in the fight against climate change. The EU has pledged to reduce net emissions by at least 55% by 2030, compared to 1990 levels. Our pledge is among the most ambitious of the major emitters, but it requires major new regulations that have yet to be implemented and must be realized during a time when we are facing significant economic and security challenges. Despite these potential limitations, the EU has pioneered economic policy that puts a price on greenhouse gas emissions, and we are leaders in deploying renewable energy sources such as wind and solar. We will continue to lead but we cannot and will not move alone. Forests and Land Use Though we can pledge reductions in emissions from deforestation and land degradation within our countries, doing so would address only a small portion of EU emissions. 1 https://skepticalscience.com/global-warming-scientific-consensus.htm"
+    },
+    {
+      "page": 2,
+      "text": "Global Landscape • Emissions in China, India and other developing nations are growing rapidly. China alone is now responsible for about one-quarter of global CO 2 emissions. Total emissions from the developing countries will soon overwhelm emissions from all developed nations. • The US has more than 2.5 times the per capita emissions of the EU and had pledged to reduce its emissions by only 26-28% by 2025 from 2005 levels. But it has since pulled out of the Paris Agreement and the Trump Administration is actively blocking the deployment of wind while stimulating fossil fuel use. In spite of these challenges, US research shows that the costs of delay are high while most states and regions in the US will benefit from policies that reduce emissions. • The less developed nations continue to emphasize that reductions in their emissions would require extensive financial assistance from developed countries, but corruption pervades many of these countries and financial assistance often fails to reach its intended use. They may also emphasize forestry policy over cutting fossil fuel emissions, which, while important, is insufficient for meeting the climate challenge. Developed by Climate Interactive, MIT Sloan, and the UML Climate Change Initiative. Updated: November 2025"
+    }
+  ],
+  "attribution": "World Climate Simulation materials by Climate Interactive, MIT Sloan, and the UMass Lowell Climate Change Initiative. Updated November 2025. Adapted for nested-agent experiments.",
+  "license": "CC BY 4.0",
+  "goals": [
+    "Lead collective emissions reductions while protecting economies and security",
+    "Maintain credibility around the 55% net reduction pledge for 2030 versus 1990",
+    "Mobilize effective climate finance with international participation"
+  ],
+  "negotiating_constraints": [
+    "The EU will lead but cannot and will not move alone",
+    "Security, economic growth and cost of living constrain policy",
+    "Financial assistance should reach its intended climate use"
+  ],
+  "opportunities": [
+    "Energy independence",
+    "Cleaner air and clean energy jobs",
+    "Cooperation with US subnational actors"
+  ],
+  "climate_risks": [
+    "Increasing damage without dramatic global emissions reductions"
+  ],
+  "finance_position": "contributor",
+  "experimental_baseline": {
+    "delegation": "eu",
+    "emissions_peak_year": 2026,
+    "reduction_start_year": 2026,
+    "annual_reduction_rate_percent": 3.5,
+    "deforestation_prevention_percent": 50,
+    "afforestation_percent": 40,
+    "climate_fund_billion_per_year": 80
+  },
+  "experimental_limits": {
+    "reduction_rate_maximum": 8.0,
+    "finance_absolute_maximum": 200
+  },
+  "adaptation_notes": "Goals and qualitative constraints paraphrase pages 1-2. Baseline commitments, numeric ceilings, finance-role restrictions, personalities and scoring are author-created experimental assumptions, NOT official prescribed positions. Source text reflects November 2025 and is not a live policy fact-check."
+}
