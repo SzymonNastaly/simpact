@@ -236,3 +236,18 @@ summary{font-size:12px;color:var(--green);cursor:pointer;line-height:1.5}
 .viz-scale i{width:160px;height:10px;border-radius:5px;background:linear-gradient(90deg,rgb(184,49,47),rgb(240,239,236),rgb(28,92,171))}
 .viz-scale-empty{display:inline-flex;align-items:center;gap:6px;margin-left:10px}
 .viz-scale-empty b{width:12px;height:12px;border:1px dashed var(--viz-axis);border-radius:2px;display:inline-block}
+.viz-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:22px}
+.viz-tile{border:1px solid var(--line);border-radius:12px;padding:18px;outline:none}
+.viz-tile:focus-visible{border-color:var(--green)}
+.viz-tile-label{font-size:12px;color:var(--muted);margin-bottom:6px}
+.viz-tile-value{font-size:40px;font-weight:600;letter-spacing:-1px;margin-bottom:10px;line-height:1}
+.viz-tile-value span{font-size:14px;font-weight:400;color:var(--muted);margin-left:3px;letter-spacing:0}
+.viz-meter{position:relative;height:8px;border-radius:4px;background:#cde2fb;margin-bottom:10px}
+.viz-meter i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--series-1)}
+.viz-meter b{position:absolute;top:-3px;height:14px;border:1.5px solid var(--ink);border-radius:3px;box-sizing:border-box}
+.viz-tile-note{font-size:11px;color:var(--muted);line-height:1.5;margin:4px 0 0}
+.viz-subhead{font-size:11px;text-transform:uppercase;letter-spacing:1.3px;font-weight:650;margin:14px 0 10px}
+.viz-markers{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.viz-markers .chip{font-size:12px;padding:5px 11px;outline:none}
+.viz-markers .chip small{color:var(--muted);margin-left:4px}
+.viz-table p{font-size:13px;line-height:1.6;margin:10px 0 0}

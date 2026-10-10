@@ -257,6 +257,7 @@
     renderMeeting();
     renderNetwork();
     chart('bilateral-relations', (bilaterals?.rounds || []).map(round => round.relations), el => window.SimpactViz.relations(el, bilaterals, chartNames));
+    chart('bilateral-metrics', (bilaterals?.rounds || []).map(round => round.metrics), el => window.SimpactViz.metrics(el, bilaterals, chartNames));
   }
 
   function renderBilateralControls() {

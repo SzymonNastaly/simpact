@@ -246,5 +246,52 @@ window.SimpactViz = (() => {
       <figure class="viz-figure">${svg(width, height, 'Cooperation between delegations')}${body}</svg></figure>${table}`;
   }
 
-  return {positions, movement, network, relations};
+  // Bilaterals: AGENT_METRICS.md scores, averaged over independent Gemini analysts with their spread.
+  const COUNTRY_METRICS = [
+    {key: 'cooperativeness', title: 'Cooperativeness', low: 'Obstructive', high: 'Constructive'},
+    {key: 'self_vs_global', title: 'Interest argued for', low: 'Own country', high: 'The planet'},
+    {key: 'say_do_gap', title: 'Say–do gap', low: 'Consistent', high: 'Contradicted'},
+  ];
+  const MARKER_LABELS = {betrayal:'Betrayal',reversal:'Reversal',new_coalition:'New coalition',bloc_switch:'Bloc switch',free_riding:'Free riding',holdout:'Holdout',breakthrough:'Breakthrough',persuasion:'Persuasion'};
+  function metrics(el, data, names) {
+    const round = (data.rounds || []).filter(r => r.metrics).slice(-1)[0];
+    if (!round) { el.hidden = true; return; }
+    el.hidden = false;
+    const m = round.metrics, nameOf = id => (data.delegations || []).find(d => d.id === id)?.name || id;
+    const evidence = ids => ids.filter(id => m.evidence?.[id]).map(id => `<br><span>“${esc(m.evidence[id].text.slice(0, 160))}${m.evidence[id].text.length > 160 ? '…' : ''}”</span>`).join('');
+    const ratingsTip = (title, entry) => `<strong>${esc(title)}: ${fmt(entry.score, 0)} / 100</strong><br><span>Analysts ranged ${fmt(entry.low, 0)}–${fmt(entry.high, 0)}</span>${entry.ratings.map(r => `<br>${esc(r.analyst)} · ${fmt(r.score, 0)}: ${esc(r.reason)}${evidence(r.evidence.slice(0, 1))}`).join('')}`;
+    const tile = (key, title, caption, extra = '') => {
+      const entry = m.global[key];
+      return `<article class="viz-tile" tabindex="0" data-tip="${esc(ratingsTip(title, entry))}"><p class="viz-tile-label">${esc(title)}</p><p class="viz-tile-value">${fmt(entry.score, 0)}<span>/100</span></p>
+        <div class="viz-meter" aria-hidden="true"><i style="width:${entry.score}%"></i><b style="left:${entry.low}%;width:${Math.max(.6, entry.high - entry.low)}%"></b></div>
+        <p class="viz-tile-note">${esc(caption)} · analysts ${fmt(entry.low, 0)}–${fmt(entry.high, 0)}</p>${extra}</article>`;
+    };
+    const f = m.finance;
+    const financeNote = f ? `<p class="viz-tile-note">${esc(f.source)}: ${money(f.contributed)} contributed vs ${money(-f.requested)} requested a year${f.requested > f.contributed ? ` · gap $${fmt(f.requested - f.contributed, 0)}B` : ''}</p>` : '';
+    const width = Math.max(320, el.clientWidth || 900), stacked = width < 760;
+    const labelW = stacked ? 0 : 170, rowH = 32, top = 34, bottom = 22;
+    const colW = stacked ? width - 130 : (width - labelW - 24 * 2) / 3;
+    const countries = m.countries;
+    const column = (metric, withLabels) => {
+      const x = scale(0, 100, 10, colW - 10), height = top + countries.length * rowH + bottom, lw = withLabels ? (stacked ? 120 : labelW) : 0;
+      let body = [0, 50, 100].map(t => `<line x1="${lw + x(t)}" x2="${lw + x(t)}" y1="${top - 6}" y2="${height - bottom}" class="${t === 50 ? 'viz-zero' : 'viz-grid'}"/><text x="${lw + x(t)}" y="${height - 6}" class="viz-tick" text-anchor="middle">${t}</text>`).join('');
+      body += `<text x="${lw + x(0)}" y="${top - 14}" class="viz-tick">← ${esc(metric.low)}</text><text x="${lw + x(100)}" y="${top - 14}" class="viz-tick" text-anchor="end">${esc(metric.high)} →</text>`;
+      countries.forEach((country, i) => {
+        const entry = country[metric.key], y = top + i * rowH + rowH / 2;
+        if (withLabels) body += `<text x="${lw - 12}" y="${y + 4}" class="viz-label" text-anchor="end">${esc(nameOf(country.delegation))}</text>`;
+        body += `<line x1="${lw + x(entry.low)}" x2="${lw + x(entry.high)}" y1="${y}" y2="${y}" class="viz-range"/>`;
+        body += `<g class="viz-dot" tabindex="0" data-tip="${esc(ratingsTip(`${nameOf(country.delegation)} · ${metric.title}`, entry))}"><circle cx="${lw + x(entry.score)}" cy="${y}" r="12" fill="transparent"/><circle cx="${lw + x(entry.score)}" cy="${y}" r="5" fill="var(--series-1)" stroke="var(--viz-surface)" stroke-width="2"/></g>`;
+      });
+      return `<figure class="viz-figure" style="flex:${lw + colW} 1 0;min-width:0"><figcaption><strong>${esc(metric.title)}</strong><span>0–100</span></figcaption>${svg(lw + colW, height, metric.title)}${body}</svg></figure>`;
+    };
+    const markers = m.markers.length ? `<div class="viz-markers">${m.markers.map(marker => `<span class="chip" tabindex="0" data-tip="${esc(`<strong>${esc(MARKER_LABELS[marker.type] || marker.type)}</strong> · flagged by ${marker.analysts.length} of ${m.analysts} analysts${marker.notes.map(n => `<br>${esc(n)}`).join('')}${evidence(marker.evidence || [])}`)}">${esc(MARKER_LABELS[marker.type] || marker.type)} · ${esc(marker.delegations.map(nameOf).join(', ') || 'summit')} <small>${marker.analysts.length}/${m.analysts}</small></span>`).join('')}</div>` : '<p class="viz-tile-note">No emergence markers were flagged.</p>';
+    const table = `<details class="viz-table"><summary>Data table</summary><table><thead><tr><th>Delegation</th>${COUNTRY_METRICS.map(c => `<th>${esc(c.title)}</th>`).join('')}</tr></thead><tbody>${countries.map(c => `<tr><td>${esc(nameOf(c.delegation))}</td>${COUNTRY_METRICS.map(metric => `<td>${fmt(c[metric.key].score, 0)} (${fmt(c[metric.key].low, 0)}–${fmt(c[metric.key].high, 0)})</td>`).join('')}</tr>`).join('')}</tbody></table></details>`;
+    el.innerHTML = `<div class="viz-heading"><h2>How each delegation behaved</h2><p>${m.analysts} independent Gemini analysts scored the round from the record (agent metrics, 0–100); dots are their average, grey bars their range. Hover for each analyst’s reason and the evidence it cited. Researcher only.</p></div>
+      <div class="viz-tiles">${tile('burden_sharing', 'Burden sharing', 'Who carries the cost', financeNote)}${tile('trust', 'Trust', 'Do private and public positions match')}</div>
+      <div class="viz-row${stacked ? '' : ' side'}">${COUNTRY_METRICS.map((metric, i) => column(metric, stacked || i === 0)).join('')}</div>
+      <h3 class="viz-subhead">Emergence markers</h3>${markers}
+      <details class="viz-table"><summary>Analysts’ summaries of the round</summary>${m.summaries.map(x => `<p><strong>${esc(x.analyst)}</strong> · ${esc(x.summary)}</p>`).join('')}</details>${table}`;
+  }
+
+  return {positions, movement, network, relations, metrics};
 })();

@@ -186,6 +186,33 @@ class Lab:
         return {"thoughts": thoughts or ([summary["summary"]] if summary.get("summary") else []),
                 "source": "provider_summary" if thoughts else trace.get("summary_source", "not_recorded")}
 
+    def metrics_view(self, metrics: dict, scored: Event) -> dict:
+        """The analysts' scores, the text of every cited record, and finance figures to set against burden_sharing."""
+        from .judge import build_dossier
+        # Only what existed when the analysts judged: later commitments must not stand in for the evidence.
+        before = self.events[:next(i for i, e in enumerate(self.events) if e.id == scored.id)]
+        round_number = scored.round
+        dossier = {item["id"]: item for item in build_dossier(before, round_number)}
+        cited = {e for entry in [*(c[m] for c in metrics["countries"] for m in c if m != "delegation"), *metrics["global"].values()]
+                 for r in entry["ratings"] for e in r["evidence"]}
+        cited |= {e for marker in metrics["markers"] for e in marker.get("evidence", [])}
+        # Each delegation's latest team position: its published commitment if any, else its members' latest proposals.
+        finance = {}
+        published = [e for e in before if e.kind == "commitments"]
+        if published:
+            finance = {k: c["climate_fund_billion_per_year"] for k, c in published[-1].payload["commitments"].items()}
+            source = f"Round {published[-1].round} published commitments"
+        else:
+            for event in before:
+                if event.kind == "internal_speech" and event.payload.get("commitment"):
+                    finance.setdefault(event.owners[0], {})[event.actor] = event.payload["commitment"]["climate_fund_billion_per_year"]
+            finance = {k: sum(v.values()) / len(v) for k, v in finance.items()}
+            source = "Average of each team's latest proposals"
+        return {**metrics, "evidence": {i: dossier[i] for i in cited if i in dossier},
+                "finance": {"source": source, "by_delegation": finance,
+                            "contributed": sum(v for v in finance.values() if v > 0),
+                            "requested": -sum(v for v in finance.values() if v < 0)}}
+
     def participant_directory(self) -> list[dict]:
         names = {**{k: b.title for k, b in self.briefs.items()}, **{k: b.title for k, b in self.observer_briefs.items()}}
         return [{"agent": key, "delegation": a["delegation"], "delegation_name": names.get(a["delegation"], a["delegation"]),
@@ -218,6 +245,7 @@ class Lab:
                 slot_of(event.round, event.payload["slot"])["summary"] = {"text": event.payload["summary"],
                     "trace_id": traces.get(event.id), "thinking": thinking(event.id)}
         relations = {e.round: e.payload for e in visible if e.kind == "bilateral_relations"}
+        metrics = {e.round: self.metrics_view(e.payload, e) for e in visible if e.kind == "agent_metrics"}
         for meeting in fold_meetings(visible).values():
             for item in (*meeting["messages"], *meeting["reports"].values()):
                 item.update(trace_id=traces.get(item["event_id"]), thinking=thinking(item["event_id"]))
@@ -225,7 +253,8 @@ class Lab:
         return {"mode": "recorded", "run": self.run_name, "backend": self.state["config"]["backend"],
                 "participants": self.participant_directory(),
                 "delegations": [{"id": k, "name": b.title} for k, b in self.briefs.items()],
-                "rounds": [{"round": number, "slots": [slots[k] for k in sorted(slots)], "relations": relations.get(number)}
+                "rounds": [{"round": number, "slots": [slots[k] for k in sorted(slots)], "relations": relations.get(number),
+                            "metrics": metrics.get(number)}
                            for number, slots in sorted(rounds.items())]}
 
     def trace(self, event_id: str, scope: str) -> dict:
